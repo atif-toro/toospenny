@@ -237,18 +237,15 @@ function AccountDialog({
   const [type, setType] = useState("current");
   const [balance, setBalance] = useState("");
   const [notes, setNotes] = useState("");
-  const [key, setKey] = useState(0);
 
-  // Reset the form each time the dialog opens for a different account.
-  const formKey = `${open ? "open" : "closed"}-${account?.id ?? "new"}`;
-  if (open && key !== 0 && formKey !== key) setKey(0);
-  if (open && key === 0) {
-    setKey(formKey);
+  // Reset the form each time the dialog opens.
+  useEffect(() => {
+    if (!open) return;
     setName(account?.name ?? "");
     setType(account?.type ?? "current");
     setBalance(account ? (account.balance_pence / 100).toFixed(2) : "");
     setNotes(account?.notes ?? "");
-  }
+  }, [open, account]);
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
