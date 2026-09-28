@@ -30,8 +30,8 @@ export function StatCard({
 }: {
   label: string;
   value: string;
-  sub?: ReactNode;
-  valueClassName?: string;
+  sub?: ReactNode | undefined;
+  valueClassName?: string | undefined;
 }) {
   return (
     <div className="rounded-xl border bg-card p-5 shadow-sm">
@@ -57,8 +57,8 @@ export function MoneyBar({
 }: {
   value: number;
   max: number;
-  className?: string;
-  barClassName?: string;
+  className?: string | undefined;
+  barClassName?: string | undefined;
 }) {
   const pct = max > 0 ? Math.min(100, Math.round((value / max) * 100)) : 0;
   return (

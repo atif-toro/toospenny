@@ -26,6 +26,8 @@ export type PayoffResult = {
 
 const MAX_MONTHS = 600;
 
+type SimDebt = PayoffDebt & { balance: number };
+
 /** Order debts by method: snowball = smallest balance first, avalanche = highest APR first. */
 export function orderDebts(debts: PayoffDebt[], method: PayoffMethod): PayoffDebt[] {
   return [...debts].sort((a, b) => {
@@ -55,7 +57,7 @@ export function simulatePayoff(
     series: [],
   };
 
-  const list = debts
+  const list: SimDebt[] = debts
     .filter((d) => d.balancePence > 0)
     .map((d) => ({ ...d, balance: d.balancePence }));
 
@@ -64,8 +66,9 @@ export function simulatePayoff(
   const budget = list.reduce((s, d) => s + d.minPaymentPence, 0) + Math.max(0, extraPence);
   if (budget <= 0) return { ...empty, feasible: false };
 
-  const ordered = orderDebts(list, method);
+  const ordered: SimDebt[] = orderDebts(list, method);
   const rank = new Map(ordered.map((d, i) => [d.id, i]));
+  void rank;
 
   let month = 0;
   let interest = 0;

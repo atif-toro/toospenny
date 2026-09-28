@@ -36,7 +36,9 @@ export function monthKey(d: Date | string): string {
 }
 
 export function monthLabel(key: string): string {
-  const [y, m] = key.split("-").map(Number);
+  const parts = key.split("-");
+  const y = Number(parts[0]);
+  const m = Number(parts[1] ?? "1");
   return new Date(y, m - 1, 1).toLocaleDateString("en-GB", { month: "short", year: "numeric" });
 }
 
