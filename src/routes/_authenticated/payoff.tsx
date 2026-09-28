@@ -333,8 +333,3 @@ function PayoffPage() {
     </div>
   );
 }
-
-function monthAdd(label: string): string {
-  // monthLabel("YYYY-MM") -> "Sep 2026"; add one month for chart display only.
-  return label;
-}
