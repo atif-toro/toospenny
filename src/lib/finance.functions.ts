@@ -675,13 +675,8 @@ export const getDashboard = createServerFn({ method: "GET" })
 
     // 12-month trend: per-month income/expenses, with net worth back-projected
     // from today using each month's net transaction effect.
-    const monthDeltas = new Map<string, number>();
-    for (const t of allTxs) {
-      const key = t.date.slice(0, 7);
-      const delta = t.type === "income" ? t.amount_pence : -t.amount_pence;
-      monthDeltas.set(key, (monthDeltas.get(key) ?? 0) + delta);
-    }
     const monthly: DashboardData["monthly"] = [];
+
     let runningNetWorth = netWorth;
     for (let i = 0; i < 12; i++) {
       const d = new Date(now.getFullYear(), now.getMonth() - i, 1);
