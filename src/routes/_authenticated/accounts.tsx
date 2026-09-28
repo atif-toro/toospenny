@@ -258,7 +258,7 @@ function AccountDialog({
           onSubmit={(e) => {
             e.preventDefault();
             onSubmit({
-              id: account?.id,
+              ...(account ? { id: account.id } : {}),
               name: name.trim(),
               type,
               balance_pence: parsePoundsToPence(balance || "0") ?? 0,

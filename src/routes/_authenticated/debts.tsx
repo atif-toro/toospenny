@@ -308,7 +308,7 @@ function DebtDialog({
           onSubmit={(e) => {
             e.preventDefault();
             onSubmit({
-              id: debt?.id,
+              ...(debt ? { id: debt.id } : {}),
               name: name.trim(),
               type,
               balance_pence: parsePoundsToPence(balance || "0") ?? 0,

@@ -29,7 +29,7 @@ import {
   listTransactions,
   saveTransaction,
 } from "@/lib/finance.functions";
-import { formatPence, monthKey, monthLabel, monthStart, todayISO } from "@/lib/money";
+import { formatPence, monthKey, monthLabel, todayISO } from "@/lib/money";
 
 export const Route = createFileRoute("/_authenticated/transactions")({
   head: () => ({
@@ -49,7 +49,7 @@ export const Route = createFileRoute("/_authenticated/transactions")({
 
 function TransactionsPage() {
   const queryClient = useQueryClient();
-  const [month, setMonth] = useState(monthKey());
+  const [month, setMonth] = useState(monthKey(todayISO()));
   const [type, setType] = useState<string>("all");
   const [categoryId, setCategoryId] = useState<string>("all");
   const [search, setSearch] = useState("");
@@ -63,7 +63,7 @@ function TransactionsPage() {
 
   const filter = useMemo(
     () => ({
-      month: month === "all" ? undefined : monthStart(month),
+      month: month === "all" ? undefined : `${month}-01`,
       type: type === "all" ? undefined : (type as "income" | "expense"),
       categoryId: categoryId === "all" ? undefined : categoryId,
       search: search.trim() || undefined,

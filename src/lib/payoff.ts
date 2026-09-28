@@ -66,8 +66,7 @@ export function simulatePayoff(
   const budget = list.reduce((s, d) => s + d.minPaymentPence, 0) + Math.max(0, extraPence);
   if (budget <= 0) return { ...empty, feasible: false };
 
-  const ordered: SimDebt[] = orderDebts(list, method);
-  const rank = new Map(ordered.map((d, i) => [d.id, i]));
+  const ordered: SimDebt[] = orderDebts(list, method) as SimDebt[];
   void rank;
 
   let month = 0;
