@@ -605,7 +605,121 @@ export const getDashboard = createServerFn({ method: "GET" })
       .slice(0, 10);
     const monthStartDate = new Date(now.getFullYear(), now.getMonth(), 1)
       .toISOString()
-      .slice(0, 10 grab_placeholder);
+      .slice(0, 10);
 
-    return {} as DashboardData;
+    const [accountsRes, debtsRes, paymentsRes, txRes] = await Promise.all([
+      supabase.from("accounts").select("*").eq("user_id", userId).eq("archived", false),
+      supabase.from("debts").select("balance_pence").eq("user_id", userId),
+      supabase.from("debt_payments").select("amount_pence").eq("user_id", userId),
+      supabase
+        .from("transactions")
+        .select(
+          "id, account_id, category_id, type, amount_pence, date, note, categories(name), accounts(name)",
+        )
+        .eq("user_id", userId)
+        .gte("date", twelveMonthsAgo),
+    ]);
+    if (accountsRes.error) throw new Error(accountsRes.error.message);
+    if (debtsRes.error) throw new Error(debtsRes.error.message);
+    if (paymentsRes.error) throw new Error(paymentsRes.error.message);
+    if (txRes.error) throw new Error(txRes.error.message);
+
+    const accounts = (accountsRes.data ?? []) as {
+      type: string;
+      balance_pence: number | string;
+    }[];
+    const allTxs = (txRes.data ?? []).map((r) => {
+      const row = r as Record<string, unknown>;
+      const cat = row.categories as { name: string } | null;
+      const acc = row.accounts as { name: string } | null;
+      return {
+        id: row.id as string,
+        account_id: row.account_id as string | null,
+        category_id: row.category_id as string | null,
+        type: row.type as "income" | "expense",
+        amount_pence: Number(row.amount_pence),
+        date: row.date as string,
+        note: row.note as string | null,
+        category_name: cat?.name ?? null,
+        account_name: acc?.name ?? null,
+      } satisfies TransactionRow;
+    });
+
+    // Net worth: positive account balances are assets, negative ones (credit
+    // cards, loans) and recorded debts are liabilities.
+    let assets = 0;
+    let negativeBalances = 0;
+    for (const a of accounts) {
+      const bal = Number(a.balance_pence);
+      if (bal >= 0) assets += bal;
+      else negativeBalances += -bal;
+    }
+    const totalDebt = (debtsRes.data ?? []).reduce((s, d) => s + Number(d.balance_pence), 0);
+    const debtPaid = (paymentsRes.data ?? []).reduce((s, p) => s + Number(p.amount_pence), 0);
+    const liabilities = negativeBalances + totalDebt;
+    const netWorth = assets - liabilities;
+
+    // This month's cash flow.
+    let income = 0;
+    let expenses = 0;
+    const spendingByCategory = new Map<string, number>();
+    for (const t of allTxs) {
+      if (t.date < monthStartDate) continue;
+      if (t.type === "income") income += t.amount_pence;
+      else {
+        expenses += t.amount_pence;
+        const key = t.category_name ?? "Uncategorised";
+        spendingByCategory.set(key, (spendingByCategory.get(key) ?? 0) + t.amount_pence);
+      }
+    }
+
+    // 12-month trend: per-month income/expenses, with net worth back-projected
+    // from today using each month's net transaction effect.
+    const monthDeltas = new Map<string, number>();
+    for (const t of allTxs) {
+      const key = t.date.slice(0, 7);
+      const delta = t.type === "income" ? t.amount_pence : -t.amount_pence;
+      monthDeltas.set(key, (monthDeltas.get(key) ?? 0) + delta);
+    }
+    const monthly: DashboardData["monthly"] = [];
+    let runningNetWorth = netWorth;
+    for (let i = 0; i < 12; i++) {
+      const d = new Date(now.getFullYear(), now.getMonth() - i, 1);
+      const key = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`;
+      const inMonth = allTxs
+        .filter((t) => t.date.slice(0, 7) === key)
+        .reduce(
+          (s, t) => s + (t.type === "income" ? t.amount_pence : -t.amount_pence),
+          0,
+        );
+      monthly.push({
+        month: key,
+        income: allTxs
+          .filter((t) => t.date.slice(0, 7) === key && t.type === "income")
+          .reduce((s, t) => s + t.amount_pence, 0),
+        expenses: allTxs
+          .filter((t) => t.date.slice(0, 7) === key && t.type === "expense")
+          .reduce((s, t) => s + t.amount_pence, 0),
+        netWorth: runningNetWorth,
+      });
+      runningNetWorth -= inMonth;
+    }
+    monthly.reverse();
+
+    return {
+      netWorthPence: netWorth,
+      assetsPence: assets,
+      liabilitiesPence: liabilities,
+      totalDebtPence: totalDebt,
+      debtPaidPence: debtPaid,
+      thisMonth: { incomePence: income, expensesPence: expenses },
+      spendingByCategory: [...spendingByCategory.entries()]
+        .map(([name, amountPence]) => ({ name, amountPence }))
+        .sort((a, b) => b.amountPence - a.amountPence),
+      monthly,
+      recentTransactions: allTxs.slice(0, 8),
+      accountCount: accounts.length,
+      transactionCount: allTxs.length,
+    };
   });
+
