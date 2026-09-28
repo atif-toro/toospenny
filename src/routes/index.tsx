@@ -3,6 +3,7 @@ import { useEffect } from "react";
 import { ArrowRight, ChartPie, Landmark, Target } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { supabase } from "@/integrations/supabase/client";
+import { SpennyLogo } from "@/components/brand";
 
 export const Route = createFileRoute("/")({
   head: () => ({
