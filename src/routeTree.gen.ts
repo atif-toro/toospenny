@@ -15,7 +15,9 @@ import { Route as AuthRouteImport } from './routes/auth'
 import { Route as AuthenticatedAccountsRouteImport } from './routes/_authenticated/accounts'
 import { Route as AuthenticatedBudgetsRouteImport } from './routes/_authenticated/budgets'
 import { Route as AuthenticatedDashboardRouteImport } from './routes/_authenticated/dashboard'
+import { Route as AuthenticatedDebtsRouteImport } from './routes/_authenticated/debts'
 import { Route as AuthenticatedGoalsRouteImport } from './routes/_authenticated/goals'
+import { Route as AuthenticatedPayoffRouteImport } from './routes/_authenticated/payoff'
 import { Route as AuthenticatedTransactionsRouteImport } from './routes/_authenticated/transactions'
 
 const IndexRoute = IndexRouteImport.update({
@@ -47,9 +49,19 @@ const AuthenticatedDashboardRoute = AuthenticatedDashboardRouteImport.update({
   path: '/dashboard',
   getParentRoute: () => AuthenticatedRouteRoute,
 } as any)
+const AuthenticatedDebtsRoute = AuthenticatedDebtsRouteImport.update({
+  id: '/debts',
+  path: '/debts',
+  getParentRoute: () => AuthenticatedRouteRoute,
+} as any)
 const AuthenticatedGoalsRoute = AuthenticatedGoalsRouteImport.update({
   id: '/goals',
   path: '/goals',
+  getParentRoute: () => AuthenticatedRouteRoute,
+} as any)
+const AuthenticatedPayoffRoute = AuthenticatedPayoffRouteImport.update({
+  id: '/payoff',
+  path: '/payoff',
   getParentRoute: () => AuthenticatedRouteRoute,
 } as any)
 const AuthenticatedTransactionsRoute =
@@ -65,7 +77,9 @@ export interface FileRoutesByFullPath {
   '/accounts': typeof AuthenticatedAccountsRoute
   '/budgets': typeof AuthenticatedBudgetsRoute
   '/dashboard': typeof AuthenticatedDashboardRoute
+  '/debts': typeof AuthenticatedDebtsRoute
   '/goals': typeof AuthenticatedGoalsRoute
+  '/payoff': typeof AuthenticatedPayoffRoute
   '/transactions': typeof AuthenticatedTransactionsRoute
 }
 export interface FileRoutesByTo {
@@ -74,7 +88,9 @@ export interface FileRoutesByTo {
   '/accounts': typeof AuthenticatedAccountsRoute
   '/budgets': typeof AuthenticatedBudgetsRoute
   '/dashboard': typeof AuthenticatedDashboardRoute
+  '/debts': typeof AuthenticatedDebtsRoute
   '/goals': typeof AuthenticatedGoalsRoute
+  '/payoff': typeof AuthenticatedPayoffRoute
   '/transactions': typeof AuthenticatedTransactionsRoute
 }
 export interface FileRoutesById {
@@ -85,7 +101,9 @@ export interface FileRoutesById {
   '/_authenticated/accounts': typeof AuthenticatedAccountsRoute
   '/_authenticated/budgets': typeof AuthenticatedBudgetsRoute
   '/_authenticated/dashboard': typeof AuthenticatedDashboardRoute
+  '/_authenticated/debts': typeof AuthenticatedDebtsRoute
   '/_authenticated/goals': typeof AuthenticatedGoalsRoute
+  '/_authenticated/payoff': typeof AuthenticatedPayoffRoute
   '/_authenticated/transactions': typeof AuthenticatedTransactionsRoute
 }
 export interface FileRouteTypes {
@@ -96,7 +114,9 @@ export interface FileRouteTypes {
     | '/accounts'
     | '/budgets'
     | '/dashboard'
+    | '/debts'
     | '/goals'
+    | '/payoff'
     | '/transactions'
   fileRoutesByTo: FileRoutesByTo
   to:
@@ -105,7 +125,9 @@ export interface FileRouteTypes {
     | '/accounts'
     | '/budgets'
     | '/dashboard'
+    | '/debts'
     | '/goals'
+    | '/payoff'
     | '/transactions'
   id:
     | '__root__'
@@ -115,7 +137,9 @@ export interface FileRouteTypes {
     | '/_authenticated/accounts'
     | '/_authenticated/budgets'
     | '/_authenticated/dashboard'
+    | '/_authenticated/debts'
     | '/_authenticated/goals'
+    | '/_authenticated/payoff'
     | '/_authenticated/transactions'
   fileRoutesById: FileRoutesById
 }
@@ -169,11 +193,25 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AuthenticatedDashboardRouteImport
       parentRoute: typeof AuthenticatedRouteRoute
     }
+    '/_authenticated/debts': {
+      id: '/_authenticated/debts'
+      path: '/debts'
+      fullPath: '/debts'
+      preLoaderRoute: typeof AuthenticatedDebtsRouteImport
+      parentRoute: typeof AuthenticatedRouteRoute
+    }
     '/_authenticated/goals': {
       id: '/_authenticated/goals'
       path: '/goals'
       fullPath: '/goals'
       preLoaderRoute: typeof AuthenticatedGoalsRouteImport
+      parentRoute: typeof AuthenticatedRouteRoute
+    }
+    '/_authenticated/payoff': {
+      id: '/_authenticated/payoff'
+      path: '/payoff'
+      fullPath: '/payoff'
+      preLoaderRoute: typeof AuthenticatedPayoffRouteImport
       parentRoute: typeof AuthenticatedRouteRoute
     }
     '/_authenticated/transactions': {
@@ -190,7 +228,9 @@ interface AuthenticatedRouteRouteChildren {
   AuthenticatedAccountsRoute: typeof AuthenticatedAccountsRoute
   AuthenticatedBudgetsRoute: typeof AuthenticatedBudgetsRoute
   AuthenticatedDashboardRoute: typeof AuthenticatedDashboardRoute
+  AuthenticatedDebtsRoute: typeof AuthenticatedDebtsRoute
   AuthenticatedGoalsRoute: typeof AuthenticatedGoalsRoute
+  AuthenticatedPayoffRoute: typeof AuthenticatedPayoffRoute
   AuthenticatedTransactionsRoute: typeof AuthenticatedTransactionsRoute
 }
 
@@ -198,7 +238,9 @@ const AuthenticatedRouteRouteChildren: AuthenticatedRouteRouteChildren = {
   AuthenticatedAccountsRoute: AuthenticatedAccountsRoute,
   AuthenticatedBudgetsRoute: AuthenticatedBudgetsRoute,
   AuthenticatedDashboardRoute: AuthenticatedDashboardRoute,
+  AuthenticatedDebtsRoute: AuthenticatedDebtsRoute,
   AuthenticatedGoalsRoute: AuthenticatedGoalsRoute,
+  AuthenticatedPayoffRoute: AuthenticatedPayoffRoute,
   AuthenticatedTransactionsRoute: AuthenticatedTransactionsRoute,
 }
 

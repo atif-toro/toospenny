@@ -220,7 +220,9 @@ function PayoffPage() {
                   <CartesianGrid strokeDasharray="3 3" stroke="var(--border)" vertical={false} />
                   <XAxis
                     dataKey="month"
-                    tickFormatter={(m: number) => monthLabel(monthAdd(monthLabel(m)))}
+                    tickFormatter={(m: number) =>
+                      monthLabel(addMonthsISO(todayISO(), m).slice(0, 7))
+                    }
                     tick={{ fontSize: 11 }}
                     axisLine={false}
                     tickLine={false}
