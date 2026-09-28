@@ -122,14 +122,14 @@ export const saveAccount = createServerFn({ method: "POST" })
   )
   .handler(async ({ context, data }) => {
     const { supabase, userId } = context;
-    const payload: Record<string, unknown> = {
+    const payload = {
       user_id: userId,
       name: data.name,
       type: data.type,
       balance_pence: data.balance_pence,
       notes: data.notes ?? null,
+      ...(data.archived !== undefined ? { archived: data.archived } : {}),
     };
-    if (data.archived !== undefined) payload.archived = data.archived;
 
     const { error } = data.id
       ? await supabase.from("accounts").update(payload).eq("id", data.id).eq("user_id", userId)
@@ -201,7 +201,9 @@ export const listTransactions = createServerFn({ method: "POST" })
       .order("created_at", { ascending: false });
 
     if (data.month) {
-      const [y, m] = data.month.split("-").map(Number);
+      const ym = data.month.split("-");
+      const y = Number(ym[0]);
+      const m = Number(ym[1] ?? "1");
       const start = new Date(y, m - 1, 1).toISOString().slice(0, 10);
       const end = new Date(y, m, 0).toISOString().slice(0, 10);
       query = query.gte("date", start).lte("date", end);
@@ -216,16 +218,16 @@ export const listTransactions = createServerFn({ method: "POST" })
 
     return (rows ?? []).map((r) => {
       const row = r as Record<string, unknown>;
-      const cat = row.categories as { name: string } | null;
-      const acc = row.accounts as { name: string } | null;
+      const cat = row["categories"] as { name: string } | null;
+      const acc = row["accounts"] as { name: string } | null;
       return {
-        id: row.id as string,
-        account_id: row.account_id as string | null,
-        category_id: row.category_id as string | null,
-        type: row.type as "income" | "expense",
-        amount_pence: Number(row.amount_pence),
-        date: row.date as string,
-        note: row.note as string | null,
+        id: row["id"] as string,
+        account_id: row["account_id"] as string | null,
+        category_id: row["category_id"] as string | null,
+        type: row["type"] as "income" | "expense",
+        amount_pence: Number(row["amount_pence"]),
+        date: row["date"] as string,
+        note: row["note"] as string | null,
         category_name: cat?.name ?? null,
         account_name: acc?.name ?? null,
       };
