@@ -632,16 +632,16 @@ export const getDashboard = createServerFn({ method: "GET" })
     }[];
     const allTxs = (txRes.data ?? []).map((r) => {
       const row = r as Record<string, unknown>;
-      const cat = row.categories as { name: string } | null;
-      const acc = row.accounts as { name: string } | null;
+      const cat = row["categories"] as { name: string } | null;
+      const acc = row["accounts"] as { name: string } | null;
       return {
-        id: row.id as string,
-        account_id: row.account_id as string | null,
-        category_id: row.category_id as string | null,
-        type: row.type as "income" | "expense",
-        amount_pence: Number(row.amount_pence),
-        date: row.date as string,
-        note: row.note as string | null,
+        id: row["id"] as string,
+        account_id: row["account_id"] as string | null,
+        category_id: row["category_id"] as string | null,
+        type: row["type"] as "income" | "expense",
+        amount_pence: Number(row["amount_pence"]),
+        date: row["date"] as string,
+        note: row["note"] as string | null,
         category_name: cat?.name ?? null,
         account_name: acc?.name ?? null,
       } satisfies TransactionRow;
