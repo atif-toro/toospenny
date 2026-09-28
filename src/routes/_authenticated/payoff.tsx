@@ -18,7 +18,13 @@ import { PageHeader, StatCard } from "@/components/finance-ui";
 import { RouteError, RouteNotFound } from "@/components/route-states";
 import { listDebts } from "@/lib/finance.functions";
 import { addMonthsISO, formatPence, monthLabel, todayISO } from "@/lib/money";
-import { debtFreeDate, simulatePayoff } from "@/lib/payoff";
+import {
+  debtFreeDate,
+  orderDebts,
+  simulatePayoff,
+  type PayoffDebt,
+  type PayoffResult,
+} from "@/lib/payoff";
 
 export const Route = createFileRoute("/_authenticated/payoff")({
   head: () => ({
@@ -43,7 +49,10 @@ export const Route = createFileRoute("/_authenticated/payoff")({
 });
 
 function PayoffPage() {
-  const { data: debts = [], isLoading } = useQuery({ queryKey: ["debts"], queryFn: () => listDebts() });
+  const { data: debts = [], isLoading } = useQuery({
+    queryKey: ["debts"],
+    queryFn: () => listDebts(),
+  });
   const [extra, setExtra] = useState("100");
   const [method, setMethod] = useState<"snowball" | "avalanche">("snowball");
 
@@ -52,17 +61,35 @@ function PayoffPage() {
     return Number.isFinite(v) && v > 0 ? Math.round(v * 100) : 0;
   }, [extra]);
 
-  const active = debts.filter((d) => d.balance_pence > 0);
+  // Convert to the payoff engine's shape.
+  const payoffDebts: PayoffDebt[] = useMemo(
+    () =>
+      debts
+        .filter((d) => d.balance_pence > 0)
+        .map((d) => ({
+          id: d.id,
+          name: d.name,
+          balancePence: d.balance_pence,
+          apr: d.apr,
+          minPaymentPence: d.min_payment_pence,
+        })),
+    [debts],
+  );
 
   const plans = useMemo(() => {
-    if (active.length === 0) return null;
-    const snowball = simulatePayoff(active, extraPence, "snowball");
-    const avalanche = simulatePayoff(active, extraPence, "avalanche");
-    const minimums = simulatePayoff(active, 0, "avalanche");
+    if (payoffDebts.length === 0) return null;
+    const snowball = simulatePayoff(payoffDebts, extraPence, "snowball");
+    const avalanche = simulatePayoff(payoffDebts, extraPence, "avalanche");
+    const minimums = simulatePayoff(payoffDebts, 0, "avalanche");
     return { snowball, avalanche, minimums };
-  }, [active, extraPence]);
+  }, [payoffDebts, extraPence]);
 
-  const plan = plans ? (method === "snowball" ? plans.snowball : plans.avalanche) : null;
+  const plan: PayoffResult | null = plans
+    ? method === "snowball"
+      ? plans.snowball
+      : plans.avalanche
+    : null;
+
   const bestMethod = plans
     ? plans.snowball.totalInterestPence <= plans.avalanche.totalInterestPence
       ? "snowball"
@@ -71,25 +98,27 @@ function PayoffPage() {
 
   const chartData = useMemo(() => {
     if (!plans) return [];
-    const months = Math.min(
+    const len = Math.min(
       plans.snowball.series.length,
       plans.avalanche.series.length,
       plans.minimums.series.length,
     );
-    return Array.from({ length: months }, (_, i) => ({
+    return Array.from({ length: len }, (_, i) => ({
       month: i,
-      snowball: plans.snowball.series[i],
-      avalanche: plans.avalanche.series[i],
-      minimums: plans.minimums.series[i],
+      snowball: plans.snowball.series[i]?.balance ?? 0,
+      avalanche: plans.avalanche.series[i]?.balance ?? 0,
+      minimums: plans.minimums.series[i]?.balance ?? 0,
     }));
   }, [plans]);
 
   const ordered = useMemo(() => {
     if (!plan) return [];
-    return [...active]
-      .map((d) => ({ ...d, payoffMonth: plan.payoffOrder[d.id] ?? Infinity }))
-      .sort((a, b) => a.payoffMonth - b.payoffMonth);
-  }, [plan, active]);
+    const monthById = new Map(plan.payoffOrder.map((o) => [o.id, o.month]));
+    return orderDebts(payoffDebts, method).map((d) => ({
+      ...d,
+      payoffMonth: monthById.get(d.id) ?? null,
+    }));
+  }, [plan, payoffDebts, method]);
 
   if (isLoading) {
     return (
@@ -100,7 +129,7 @@ function PayoffPage() {
     );
   }
 
-  if (active.length === 0) {
+  if (payoffDebts.length === 0) {
     return (
       <div>
         <PageHeader title="Payoff planner" description="Find the fastest route to debt-free." />
@@ -162,7 +191,7 @@ function PayoffPage() {
         </div>
       </div>
 
-      {!plan.feasible ? (
+      {!plan || !plan.feasible || plan.months === null ? (
         <div className="mt-6 rounded-xl border border-destructive/30 bg-destructive/5 p-6">
           <h3 className="font-display text-lg font-semibold text-destructive">
             This plan doesn't work
@@ -184,12 +213,10 @@ function PayoffPage() {
             <StatCard label="Interest you'll pay" value={formatPence(plan.totalInterestPence)} />
             <StatCard
               label="Saved vs minimums only"
-              value={formatPence(Math.max(0, plans!.minimums.totalInterestPence - plan.totalInterestPence))}
-              sub={
-                plans!.minimums.totalInterestPence > plan.totalInterestPence
-                  ? "compared to paying minimums"
-                  : "minimums-only already saves this much"
-              }
+              value={formatPence(
+                Math.max(0, plans!.minimums.totalInterestPence - plan.totalInterestPence),
+              )}
+              sub="compared to paying minimums"
               valueClassName="text-chart-1"
             />
             <StatCard label="Total paid" value={formatPence(plan.totalPaidPence)} />
@@ -203,7 +230,9 @@ function PayoffPage() {
                 save you{" "}
                 <strong>
                   {formatPence(
-                    Math.abs(plans!.snowball.totalInterestPence - plans!.avalanche.totalInterestPence),
+                    Math.abs(
+                      plans!.snowball.totalInterestPence - plans!.avalanche.totalInterestPence,
+                    ),
                   )}
                 </strong>{" "}
                 in interest — switch to compare.
@@ -212,9 +241,7 @@ function PayoffPage() {
           )}
 
           <section className="mt-6 rounded-xl border bg-card p-5 shadow-sm">
-            <h2 className="font-display mb-4 text-lg font-semibold">
-              Balance over time
-            </h2>
+            <h2 className="font-display mb-4 text-lg font-semibold">Balance over time</h2>
             <div className="h-64">
               <ResponsiveContainer width="100%" height="100%">
                 <LineChart data={chartData} margin={{ top: 4, right: 8, bottom: 0, left: 4 }}>
@@ -239,11 +266,25 @@ function PayoffPage() {
                     tickLine={false}
                   />
                   <Tooltip
-                    labelFormatter={(m) => `Month ${Number(m) + 1}`}
+                    labelFormatter={(m) => monthLabel(addMonthsISO(todayISO(), Number(m)).slice(0, 7))}
                     formatter={(v) => formatPence(Number(v))}
                   />
-                  <Line type="monotone" dataKey="snowball" name="Snowball" stroke="var(--chart-1)" strokeWidth={2} dot={false} />
-                  <Line type="monotone" dataKey="avalanche" name="Avalanche" stroke="var(--chart-3)" strokeWidth={2} dot={false} />
+                  <Line
+                    type="monotone"
+                    dataKey="snowball"
+                    name="Snowball"
+                    stroke="var(--chart-1)"
+                    strokeWidth={2}
+                    dot={false}
+                  />
+                  <Line
+                    type="monotone"
+                    dataKey="avalanche"
+                    name="Avalanche"
+                    stroke="var(--chart-3)"
+                    strokeWidth={2}
+                    dot={false}
+                  />
                   <Line
                     type="monotone"
                     dataKey="minimums"
@@ -270,12 +311,14 @@ function PayoffPage() {
                     <div className="min-w-0">
                       <p className="truncate text-sm font-medium">{d.name}</p>
                       <p className="text-xs text-muted-foreground">
-                        {d.apr}% APR · {formatPence(d.balance_pence)} left
+                        {d.apr}% APR · {formatPence(d.balancePence)} left
                       </p>
                     </div>
                   </div>
                   <p className="shrink-0 text-xs text-muted-foreground">
-                    cleared month {plan.payoffOrder[d.id]}
+                    {d.payoffMonth
+                      ? `cleared ${monthLabel(addMonthsISO(todayISO(), d.payoffMonth).slice(0, 7))}`
+                      : "not cleared in plan"}
                   </p>
                 </li>
               ))}
@@ -315,7 +358,7 @@ function PayoffPage() {
                       )}
                     </td>
                     <td className="px-5 py-3 text-right tabular-nums">
-                      {p.feasible ? `${p.months} mo` : "—"}
+                      {p.feasible && p.months !== null ? `${p.months} mo` : "—"}
                     </td>
                     <td className="px-5 py-3 text-right tabular-nums">
                       {p.feasible ? formatPence(p.totalInterestPence) : "—"}
