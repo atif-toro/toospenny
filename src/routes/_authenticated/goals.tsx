@@ -181,7 +181,7 @@ function GoalsPage() {
               contribute.mutate({
                 data: {
                   goal_id: contribFor!.id,
-                  amount_pence: parsePoundsToPence(String(fd.get("amount") || "0")),
+                  amount_pence: parsePoundsToPence(String(fd.get("amount") || "0")) ?? 0,
                   date: String(fd.get("date") || todayISO()),
                   note: (String(fd.get("note") || "").trim() || null) as string | null,
                 },

@@ -261,7 +261,7 @@ function AccountDialog({
               id: account?.id,
               name: name.trim(),
               type,
-              balance_pence: parsePoundsToPence(balance || "0"),
+              balance_pence: parsePoundsToPence(balance || "0") ?? 0,
               notes: notes.trim() || null,
             });
           }}

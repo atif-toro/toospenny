@@ -226,7 +226,7 @@ function DebtsPage() {
               pay.mutate({
                 data: {
                   debt_id: payFor!.id,
-                  amount_pence: parsePoundsToPence(String(fd.get("amount") || "0")),
+                  amount_pence: parsePoundsToPence(String(fd.get("amount") || "0")) ?? 0,
                   date: String(fd.get("date") || todayISO()),
                   note: (String(fd.get("note") || "").trim() || null) as string | null,
                 },
@@ -311,9 +311,9 @@ function DebtDialog({
               id: debt?.id,
               name: name.trim(),
               type,
-              balance_pence: parsePoundsToPence(balance || "0"),
+              balance_pence: parsePoundsToPence(balance || "0") ?? 0,
               apr: parseFloat(apr || "0"),
-              min_payment_pence: parsePoundsToPence(minPayment || "0"),
+              min_payment_pence: parsePoundsToPence(minPayment || "0") ?? 0,
             });
           }}
         >

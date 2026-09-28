@@ -23,7 +23,7 @@ import {
 import { EmptyState, MoneyBar, PageHeader, StatCard } from "@/components/finance-ui";
 import { RouteError, RouteNotFound } from "@/components/route-states";
 import { deleteBudget, listBudgets, listCategories, saveBudget } from "@/lib/finance.functions";
-import { formatPence, monthKey, monthLabel, monthStart, parsePoundsToPence } from "@/lib/money";
+import { formatPence, monthLabel, parsePoundsToPence } from "@/lib/money";
 
 export const Route = createFileRoute("/_authenticated/budgets")({
   head: () => ({
@@ -41,9 +41,22 @@ export const Route = createFileRoute("/_authenticated/budgets")({
   component: BudgetsPage,
 });
 
+/** "YYYY-MM-01" for the current month. */
+function thisMonth(): string {
+  const now = new Date();
+  return new Date(now.getFullYear(), now.getMonth(), 1).toISOString().slice(0, 10);
+}
+
+function shiftMonthDate(month: string, delta: number): string {
+  const y = Number(month.slice(0, 4));
+  const m = Number(month.slice(5, 7));
+  const d = new Date(y, m - 1 + delta, 1);
+  return d.toISOString().slice(0, 10);
+}
+
 function BudgetsPage() {
   const queryClient = useQueryClient();
-  const [month, setMonth] = useState(monthStart(monthKey()));
+  const [month, setMonth] = useState(thisMonth);
   const [addOpen, setAddOpen] = useState(false);
 
   const { data: budgets = [], isLoading } = useQuery({
@@ -82,12 +95,6 @@ function BudgetsPage() {
   const totalSpent = budgets.reduce((s, b) => s + b.spent_pence, 0);
   const expenseCats = categories.filter((c) => c.kind === "expense");
 
-  function shiftMonth(delta: number) {
-    const [y, m] = month.slice(0, 7).split("-").map(Number);
-    const d = new Date(y, m - 1 + delta, 1);
-    setMonth(monthStart(`${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`));
-  }
-
   return (
     <div>
       <PageHeader
@@ -101,11 +108,23 @@ function BudgetsPage() {
       />
 
       <div className="flex items-center justify-center gap-2">
-        <Button variant="outline" size="icon" aria-label="Previous month" onClick={() => shiftMonth(-1)}>
+        <Button
+          variant="outline"
+          size="icon"
+          aria-label="Previous month"
+          onClick={() => setMonth((m) => shiftMonthDate(m, -1))}
+        >
           <ChevronLeft className="h-4 w-4" />
         </Button>
-        <p className="font-display min-w-40 text-center text-lg font-semibold">{monthLabel(month.slice(0, 7))}</p>
-        <Button variant="outline" size="icon" aria-label="Next month" onClick={() => shiftMonth(1)}>
+        <p className="font-display min-w-40 text-center text-lg font-semibold">
+          {monthLabel(month.slice(0, 7))}
+        </p>
+        <Button
+          variant="outline"
+          size="icon"
+          aria-label="Next month"
+          onClick={() => setMonth((m) => shiftMonthDate(m, 1))}
+        >
           <ChevronRight className="h-4 w-4" />
         </Button>
       </div>
@@ -204,7 +223,9 @@ function BudgetsPage() {
         categories={expenseCats}
         existing={budgets.map((b) => b.category_id)}
         busy={save.isPending}
-        onSubmit={(category_id, limit_pence) => save.mutate({ data: { category_id, month, limit_pence } })}
+        onSubmit={(category_id, limit_pence) =>
+          save.mutate({ data: { category_id, month, limit_pence } })
+        }
       />
     </div>
   );
@@ -240,13 +261,13 @@ function AddBudgetDialog({
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="sm:max-w-sm">
         <DialogHeader>
-          <DialogTitle>Set a budget</DialogTitle>
+          <DialogTitle>Set a budget for {monthLabel(month.slice(0, 7))}</DialogTitle>
         </DialogHeader>
         <form
           className="space-y-4"
           onSubmit={(e) => {
             e.preventDefault();
-            onSubmit(categoryId, parsePoundsToPence(limit || "0"));
+            onSubmit(categoryId, parsePoundsToPence(limit || "0") ?? 0);
           }}
         >
           <div className="space-y-1.5">
