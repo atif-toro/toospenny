@@ -67,7 +67,6 @@ export function simulatePayoff(
   if (budget <= 0) return { ...empty, feasible: false };
 
   const ordered: SimDebt[] = orderDebts(list, method) as SimDebt[];
-  void rank;
 
   let month = 0;
   let interest = 0;
