@@ -77,7 +77,6 @@ function DebtsPage() {
       toast.success(editTarget ? "Debt updated" : "Debt added");
       invalidate();
       setAddOpen(false);
-etEdit_placeholder: null,
     },
     onError: (e) => toast.error(e.message),
   });
