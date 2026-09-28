@@ -17,7 +17,7 @@ import { Label } from "@/components/ui/label";
 import { PageHeader, StatCard } from "@/components/finance-ui";
 import { RouteError, RouteNotFound } from "@/components/route-states";
 import { listDebts } from "@/lib/finance.functions";
-import { debtFreeDate, formatPence, monthLabel, simulatePayoff } from "@/lib/payoff";
+import { addMonthsISO, debtFreeDate, formatPence, monthLabel, simulatePayoff, todayISO } from "@/lib/payoff-imports";
 
 export const Route = createFileRoute("/_authenticated/payoff")({
   head: () => ({
