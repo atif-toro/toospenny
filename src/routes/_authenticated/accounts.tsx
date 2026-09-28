@@ -74,8 +74,6 @@ function AccountsPage() {
   const invalidate = () => {
     queryClient.invalidateQueries({ queryKey: ["accounts"] });
     queryClient.invalidateQueries({ queryKey: ["dashboard"] });
-touched_placeholder: {
-  }
   };
 
   const save = useMutation({
