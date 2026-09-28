@@ -29,10 +29,10 @@ export function SpennyLogo({
 }) {
   const s = sizes[size];
   return (
-    <span className={"flex items-center gap-2.5 " + className}>
+    <span className={"flex items-center gap-1.5 " + className}>
       <SpennyIcon className={s.icon} />
       <span
-        className={`font-display font-semibold tracking-[-0.02em] ${s.text} ${textClassName}`}
+        className={`font-display font-bold tracking-[-0.03em] ${s.text} ${textClassName || "text-foreground"}`}
       >
         Spenny
       </span>
