@@ -253,7 +253,7 @@ function GoalDialog({
             e.preventDefault();
             onSubmit({
               name: name.trim(),
-              target_pence: parsePoundsToPence(target || "0"),
+              target_pence: parsePoundsToPence(target || "0") ?? 0,
               target_date: date || null,
               note: null,
             });
