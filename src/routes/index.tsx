@@ -3,6 +3,7 @@ import { useEffect } from "react";
 import { ArrowRight, ChartPie, Landmark, Target } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { supabase } from "@/integrations/supabase/client";
+import { SpennyLogo } from "@/components/brand";
 
 export const Route = createFileRoute("/")({
   head: () => ({
@@ -104,11 +105,8 @@ function Landing() {
 
 function Brand() {
   return (
-    <Link to="/" className="font-display flex items-center gap-2 text-2xl font-semibold tracking-tight">
-      <span className="flex h-8 w-8 items-center justify-center rounded-lg bg-primary text-lg text-primary-foreground">
-        £
-      </span>
-      Spenny
+    <Link to="/" className="flex items-center">
+      <SpennyLogo size="md" />
     </Link>
   );
 }

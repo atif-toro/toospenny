@@ -16,6 +16,7 @@ import {
 import { Button } from "@/components/ui/button";
 import { Sheet, SheetContent, SheetTitle, SheetTrigger } from "@/components/ui/sheet";
 import { supabase } from "@/integrations/supabase/client";
+import { SpennyLogo } from "@/components/brand";
 
 const NAV = [
   { to: "/dashboard", label: "Dashboard", icon: LayoutDashboard },
@@ -68,13 +69,8 @@ function NavItems({ onNavigate }: { onNavigate?: () => void }) {
 
 function BrandMark() {
   return (
-    <Link to="/dashboard" className="flex items-center gap-2.5">
-      <span className="font-display flex h-9 w-9 items-center justify-center rounded-lg bg-sidebar-primary text-xl font-semibold text-sidebar-primary-foreground">
-        £
-      </span>
-      <span className="font-display text-2xl font-semibold tracking-tight text-sidebar-foreground">
-        Spenny
-      </span>
+    <Link to="/dashboard" className="flex items-center">
+      <SpennyLogo size="md" textClassName="text-sidebar-foreground" />
     </Link>
   );
 }

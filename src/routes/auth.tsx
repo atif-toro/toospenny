@@ -7,6 +7,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { supabase } from "@/integrations/supabase/client";
 import { lovable } from "@/integrations/lovable";
+import { SpennyLogo } from "@/components/brand";
 
 export const Route = createFileRoute("/auth")({
   head: () => ({
@@ -71,11 +72,8 @@ function AuthPage() {
   return (
     <div className="flex min-h-screen items-center justify-center bg-background px-4">
       <div className="w-full max-w-sm">
-        <a href="/" className="font-display mb-8 flex items-center justify-center gap-2 text-3xl font-semibold tracking-tight">
-          <span className="flex h-9 w-9 items-center justify-center rounded-lg bg-primary text-xl text-primary-foreground">
-            £
-          </span>
-          Spenny
+        <a href="/" className="mb-8 flex items-center justify-center">
+          <SpennyLogo size="lg" />
         </a>
 
         <div className="rounded-2xl border bg-card p-6 shadow-sm">
