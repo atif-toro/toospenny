@@ -297,7 +297,9 @@ export const listBudgets = createServerFn({ method: "POST" })
   )
   .handler(async ({ context, data }) => {
     const { supabase, userId } = context;
-    const [y, m] = data.month.slice(0, 7).split("-").map(Number);
+    const ym = data.month.slice(0, 7).split("-");
+    const y = Number(ym[0]);
+    const m = Number(ym[1] ?? "1");
     const start = new Date(y, m - 1, 1).toISOString().slice(0, 10);
     const end = new Date(y, m, 0).toISOString().slice(0, 10);
 
@@ -329,15 +331,15 @@ export const listBudgets = createServerFn({ method: "POST" })
 
     return (budgets ?? []).map((b) => {
       const row = b as Record<string, unknown>;
-      const cat = row.categories as { name: string; color: string | null } | null;
+      const cat = row["categories"] as { name: string; color: string | null } | null;
       return {
-        id: row.id as string,
-        category_id: row.category_id as string,
+        id: row["id"] as string,
+        category_id: row["category_id"] as string,
         category_name: cat?.name ?? "Unknown",
         category_color: cat?.color ?? null,
-        month: row.month as string,
-        limit_pence: Number(row.limit_pence),
-        spent_pence: spentByCategory.get(row.category_id as string) ?? 0,
+        month: row["month"] as string,
+        limit_pence: Number(row["limit_pence"]),
+        spent_pence: spentByCategory.get(row["category_id"] as string) ?? 0,
       } satisfies BudgetRow;
     });
   });
