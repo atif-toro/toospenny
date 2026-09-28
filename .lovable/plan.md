@@ -1,4 +1,4 @@
-# Keel — personal finance app
+# Spenny — personal finance app
 
 A clean, modern web app to see all your money in one place: accounts, income, expenses, savings, investments and debts — with a debt payoff planner to get you debt-free. Amounts in GBP (£). You sign in with your own account and your data is saved securely in the cloud. The app starts empty with friendly "add your first…" prompts.
 
