@@ -204,6 +204,25 @@ export const BANK_PRESETS: BankPreset[] = [
     creditColumns: ["credit"],
     dateFormat: "auto",
   },
+  // Generic-looking headers go last so distinctive formats win auto-detection.
+  {
+    id: "chase",
+    label: "Chase UK",
+    signature: ["transaction date", "description", "amount"],
+    dateColumns: ["transaction date", "date"],
+    descriptionColumns: ["description", "merchant"],
+    amountColumns: ["amount"],
+    dateFormat: "auto",
+  },
+  {
+    id: "hsbc",
+    label: "HSBC",
+    signature: ["date", "description", "amount"],
+    dateColumns: ["date"],
+    descriptionColumns: ["description"],
+    amountColumns: ["amount"],
+    dateFormat: "dmy",
+  },
 ];
 
 export const GENERIC_PRESET: BankPreset = {
