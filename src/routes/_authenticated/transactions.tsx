@@ -279,12 +279,16 @@ function AddTransactionDialog({
     onError: (e) => toast.error(e.message),
   });
 
+  // Reset only when the dialog opens — `accounts` is a new array each render,
+  // so depending on it would wipe the user's date/account edits.
+  const firstAccountId = accounts[0]?.id ?? "";
   useEffect(() => {
     if (!open) return;
     setDate(todayISO());
-    setAccountId(accounts[0]?.id ?? "");
+    setAccountId(firstAccountId);
     setCategoryId("none");
-  }, [open, accounts]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [open]);
 
   const kind = type === "income" ? "income" : "expense";
   const options = categories.filter((c) => c.kind === kind);
