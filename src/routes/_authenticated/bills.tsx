@@ -280,12 +280,7 @@ function BillsPage() {
                             aria-label={`Undo payment for ${b.name}`}
                             onClick={() =>
                               unpay.mutate({
-                                data: {
-                                  bill_id: b.id,
-                                  period: b.last_paid_on
-                                    ? periodOf(b)
-                                    : periodOf(b),
-                                },
+                                data: { bill_id: b.id, period: b.paid_period ?? b.period },
                               })
                             }
                           >
@@ -357,25 +352,6 @@ function BillsPage() {
       />
     </div>
   );
-}
-
-/** Period key of the cycle a paid bill was last settled for. */
-function periodOf(b: BillRow): string {
-  if (b.cadence === "annual") return b.due_date.slice(0, 4);
-  if (b.cadence === "quarterly") {
-    const prev = previousPeriodDate(b);
-    const m = Number(prev.slice(5, 7));
-    return `${prev.slice(0, 4)}-Q${Math.floor((m - 1) / 3) + 1}`;
-  }
-  return previousPeriodDate(b).slice(0, 7);
-}
-
-function previousPeriodDate(b: BillRow): string {
-  const step = b.cadence === "quarterly" ? 3 : b.cadence === "annual" ? 12 : 1;
-  const y = Number(b.due_date.slice(0, 4));
-  const m = Number(b.due_date.slice(5, 7)) - 1;
-  const d = new Date(Date.UTC(y, m - step, 1));
-  return d.toISOString().slice(0, 10);
 }
 
 function BillDialog({
