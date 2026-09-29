@@ -7,3 +7,4 @@
 - [x] Update logo + font: Outfit/Figtree + Wise-style green tile logo
 - [x] Bills & subscriptions tracker (recurring bills, mark paid, dashboard card)
 - [ ] Fix Google consent screen showing old app name "MoneyMap" — rename to Spenny
+- [x] Bank statement CSV import (Monzo, Revolut, NatWest, Lloyds, Halifax, Amex, Capital One + auto-detect)
