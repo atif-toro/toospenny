@@ -428,6 +428,74 @@ export type Database = {
           },
         ]
       }
+      transfers: {
+        Row: {
+          amount_pence: number
+          created_at: string
+          date: string
+          debt_payment_id: string | null
+          from_account_id: string | null
+          id: string
+          note: string | null
+          to_account_id: string | null
+          to_debt_id: string | null
+          user_id: string
+        }
+        Insert: {
+          amount_pence: number
+          created_at?: string
+          date?: string
+          debt_payment_id?: string | null
+          from_account_id?: string | null
+          id?: string
+          note?: string | null
+          to_account_id?: string | null
+          to_debt_id?: string | null
+          user_id: string
+        }
+        Update: {
+          amount_pence?: number
+          created_at?: string
+          date?: string
+          debt_payment_id?: string | null
+          from_account_id?: string | null
+          id?: string
+          note?: string | null
+          to_account_id?: string | null
+          to_debt_id?: string | null
+          user_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "transfers_debt_payment_id_fkey"
+            columns: ["debt_payment_id"]
+            isOneToOne: false
+            referencedRelation: "debt_payments"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "transfers_from_account_id_fkey"
+            columns: ["from_account_id"]
+            isOneToOne: false
+            referencedRelation: "accounts"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "transfers_to_account_id_fkey"
+            columns: ["to_account_id"]
+            isOneToOne: false
+            referencedRelation: "accounts"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "transfers_to_debt_id_fkey"
+            columns: ["to_debt_id"]
+            isOneToOne: false
+            referencedRelation: "debts"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
     }
     Views: {
       [_ in never]: never

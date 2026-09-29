@@ -15,6 +15,13 @@
       "when": 1790690267680,
       "tag": "0001_create_bills",
       "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "7",
+      "when": 1790693372229,
+      "tag": "0002_create_transfers",
+      "breakpoints": true
     }
   ]
 }
