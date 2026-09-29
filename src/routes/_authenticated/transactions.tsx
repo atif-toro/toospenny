@@ -63,7 +63,7 @@ function TransactionsPage() {
 
   const filter = useMemo(
     () => ({
-      month: month === "all" ? undefined : `${month}-01`,
+      month: month === "all" ? undefined : month,
       type: type === "all" ? undefined : (type as "income" | "expense"),
       categoryId: categoryId === "all" ? undefined : categoryId,
       search: search.trim() || undefined,
@@ -81,6 +81,7 @@ function TransactionsPage() {
     queryClient.invalidateQueries({ queryKey: ["transactions"] });
     queryClient.invalidateQueries({ queryKey: ["dashboard"] });
     queryClient.invalidateQueries({ queryKey: ["budgets"] });
+    queryClient.invalidateQueries({ queryKey: ["accounts"] });
   };
 
   const remove = useMutation({
