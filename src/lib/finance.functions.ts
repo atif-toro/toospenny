@@ -238,6 +238,36 @@ export const listTransactions = createServerFn({ method: "POST" })
     }) as TransactionRow[];
   });
 
+/** Signed effect a transaction has on its account balance. */
+function txDelta(type: "income" | "expense", amountPence: number): number {
+  return type === "income" ? amountPence : -amountPence;
+}
+
+/** Apply a signed change to an account's balance. */
+async function adjustAccountBalance(
+  supabase: { from: (t: string) => any },
+  userId: string,
+  accountId: string | null,
+  deltaPence: number,
+): Promise<void> {
+  if (!accountId || deltaPence === 0) return;
+  const { data, error } = await supabase
+    .from("accounts")
+    .select("balance_pence")
+    .eq("id", accountId)
+    .eq("user_id", userId)
+    .maybeSingle();
+  if (error) throw new Error(error.message);
+  if (!data) return;
+  const next = Number(data.balance_pence) + deltaPence;
+  const { error: upError } = await supabase
+    .from("accounts")
+    .update({ balance_pence: next })
+    .eq("id", accountId)
+    .eq("user_id", userId);
+  if (upError) throw new Error(upError.message);
+}
+
 export const saveTransaction = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
   .inputValidator((input: unknown) =>
