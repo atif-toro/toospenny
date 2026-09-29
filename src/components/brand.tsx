@@ -11,8 +11,8 @@ export function SpennyIcon({ className = "h-9 w-9" }: { className?: string }) {
     <img
       src={icon}
       alt="Too Spenny"
-      width={302}
-      height={301}
+      width={512}
+      height={506}
       className={"rounded-[22%] object-contain " + className}
     />
   );
