@@ -74,9 +74,9 @@ export const Route = createRootRouteWithContext<{ queryClient: QueryClient }>()(
     meta: [
       { charSet: "utf-8" },
       { name: "viewport", content: "width=device-width, initial-scale=1" },
-      { title: "Spenny — personal finance" },
+      { title: "Too Spenny — personal finance" },
       { name: "description", content: "See all your money in one place and become debt-free." },
-      { property: "og:title", content: "Spenny — personal finance" },
+      { property: "og:title", content: "Too Spenny — personal finance" },
       { property: "og:description", content: "See all your money in one place and become debt-free." },
       { property: "og:type", content: "website" },
       { name: "twitter:card", content: "summary" },

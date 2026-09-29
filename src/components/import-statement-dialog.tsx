@@ -206,7 +206,7 @@ export function ImportStatementDialog({
         <DialogHeader>
           <DialogTitle>Import a bank statement</DialogTitle>
           <DialogDescription>
-            Upload a CSV from your bank, check the rows, then add them to Spenny.
+            Upload a CSV from your bank, check the rows, then add them to Too Spenny.
           </DialogDescription>
         </DialogHeader>
 

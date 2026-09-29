@@ -34,9 +34,9 @@ import { formatPence, parsePoundsToPence } from "@/lib/money";
 export const Route = createFileRoute("/_authenticated/accounts")({
   head: () => ({
     meta: [
-      { title: "Accounts — Spenny" },
+      { title: "Accounts — Too Spenny" },
       { name: "description", content: "Your bank accounts, savings, credit cards and investments." },
-      { property: "og:title", content: "Accounts — Spenny" },
+      { property: "og:title", content: "Accounts — Too Spenny" },
       { property: "og:description", content: "Your bank accounts, savings, credit cards and investments." },
       { property: "og:type", content: "website" },
       { name: "twitter:card", content: "summary" },

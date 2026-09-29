@@ -42,9 +42,9 @@ import { formatPence, monthKey, monthLabel, todayISO } from "@/lib/money";
 export const Route = createFileRoute("/_authenticated/transactions")({
   head: () => ({
     meta: [
-      { title: "Transactions — Spenny" },
+      { title: "Transactions — Too Spenny" },
       { name: "description", content: "Every penny in and out, filterable and searchable." },
-      { property: "og:title", content: "Transactions — Spenny" },
+      { property: "og:title", content: "Transactions — Too Spenny" },
       { property: "og:description", content: "Every penny in and out, filterable and searchable." },
       { property: "og:type", content: "website" },
       { name: "twitter:card", content: "summary" },

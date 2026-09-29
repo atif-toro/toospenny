@@ -10,9 +10,9 @@ export function SpennyIcon({ className = "h-9 w-9" }: { className?: string }) {
   return (
     <img
       src={icon}
-      alt="Spenny"
-      width={302}
-      height={301}
+      alt="Too Spenny"
+      width={512}
+      height={506}
       className={"rounded-[22%] object-contain " + className}
     />
   );
@@ -34,7 +34,7 @@ export function SpennyLogo({
       <span
         className={`font-display font-bold tracking-[-0.03em] ${s.text} ${textClassName || "text-foreground"}`}
       >
-        Spenny
+        Too Spenny
       </span>
     </span>
   );

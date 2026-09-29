@@ -28,9 +28,9 @@ import { formatPence, monthLabel, parsePoundsToPence } from "@/lib/money";
 export const Route = createFileRoute("/_authenticated/budgets")({
   head: () => ({
     meta: [
-      { title: "Budgets — Spenny" },
+      { title: "Budgets — Too Spenny" },
       { name: "description", content: "Set monthly limits by category and track how you're doing." },
-      { property: "og:title", content: "Budgets — Spenny" },
+      { property: "og:title", content: "Budgets — Too Spenny" },
       { property: "og:description", content: "Set monthly limits by category and track how you're doing." },
       { property: "og:type", content: "website" },
       { name: "twitter:card", content: "summary" },

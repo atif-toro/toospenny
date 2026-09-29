@@ -29,12 +29,12 @@ import {
 export const Route = createFileRoute("/_authenticated/payoff")({
   head: () => ({
     meta: [
-      { title: "Payoff planner — Spenny" },
+      { title: "Payoff planner — Too Spenny" },
       {
         name: "description",
         content: "Compare Snowball and Avalanche plans and see your debt-free date.",
       },
-      { property: "og:title", content: "Payoff planner — Spenny" },
+      { property: "og:title", content: "Payoff planner — Too Spenny" },
       {
         property: "og:description",
         content: "Compare Snowball and Avalanche plans and see your debt-free date.",
@@ -136,7 +136,7 @@ function PayoffPage() {
         <div className="rounded-xl border border-dashed bg-card/50 px-6 py-14 text-center">
           <h3 className="font-display text-xl font-semibold">Nothing to pay off</h3>
           <p className="mx-auto mt-2 max-w-sm text-sm text-muted-foreground">
-            Add a debt — a credit card, loan or mortgage — and Spenny will plan your route out of it.
+            Add a debt — a credit card, loan or mortgage — and Too Spenny will plan your route out of it.
           </p>
           <Button className="mt-5" asChild>
             <a href="/debts">Go to debts</a>
