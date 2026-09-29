@@ -212,7 +212,7 @@ function BillsPage() {
         <p className="text-center text-sm text-muted-foreground">Loading…</p>
       ) : bills.length === 0 ? (
         <EmptyState
-          title="No bills tracked yet"
+          title="No outgoings tracked yet"
           body="Add your rent, water, energy and subscriptions to see exactly what leaves your account each month."
           action={
             <Button
