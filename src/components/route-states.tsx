@@ -1,12 +1,12 @@
 import { Button } from "@/components/ui/button";
 import { Link } from "@tanstack/react-router";
 
-export function RouteError({ error }: { error: Error }) {
+export function RouteError({ error }: { error?: Error | null }) {
   return (
     <div className="rounded-xl border border-destructive/30 bg-destructive/5 px-6 py-10 text-center">
       <h2 className="font-display text-xl font-semibold">Something went wrong</h2>
       <p className="mt-2 text-sm text-muted-foreground">
-        {error.message || "An unexpected error occurred while loading this page."}
+        {error?.message || "An unexpected error occurred while loading this page."}
       </p>
       <Button className="mt-5" onClick={() => window.location.reload()}>
         Reload
