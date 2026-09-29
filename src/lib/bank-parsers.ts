@@ -2,7 +2,7 @@
  * Bank statement CSV parsing.
  *
  * Client-safe: no server-only imports. Handles the CSV exports of the UK banks
- * Spenny supports out of the box, plus a generic fallback that inspects the
+ * Too Spenny supports out of the box, plus a generic fallback that inspects the
  * header row for anything date / description / amount shaped.
  */
 
@@ -510,7 +510,7 @@ export function guessCategory(description: string, type: "income" | "expense"): 
   return null;
 }
 
-/** Key used to spot rows already present in Spenny. */
+/** Key used to spot rows already present in Too Spenny. */
 export function dedupeKey(date: string, amountPence: number, type: string, description: string): string {
   return `${date}|${type}|${amountPence}|${description.trim().toLowerCase().slice(0, 40)}`;
 }

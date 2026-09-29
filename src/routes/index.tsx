@@ -9,16 +9,16 @@ export const Route = createFileRoute("/")({
   head: () => ({
     meta: [
       {
-        title: "Spenny — See all your money in one place",
+        title: "Too Spenny — See all your money in one place",
       },
       {
         name: "description",
         content:
-          "Spenny brings your accounts, spending, budgets, goals and debts together — with a payoff planner to get you debt-free.",
+          "Too Spenny brings your accounts, spending, budgets, goals and debts together — with a payoff planner to get you debt-free.",
       },
       {
         property: "og:title",
-        content: "Spenny — See all your money in one place",
+        content: "Too Spenny — See all your money in one place",
       },
       {
         property: "og:description",
@@ -65,7 +65,7 @@ function Landing() {
             See all your money in one place — and finally pay it off.
           </h1>
           <p className="mx-auto mt-6 max-w-xl text-lg text-muted-foreground">
-            Accounts, spending, budgets, goals and debts in one calm, clear view. Spenny shows you
+            Accounts, spending, budgets, goals and debts in one calm, clear view. Too Spenny shows you
             exactly when you'll be debt-free.
           </p>
           <div className="mt-8 flex items-center justify-center gap-3">
@@ -97,7 +97,7 @@ function Landing() {
       </main>
 
       <footer className="border-t py-8 text-center text-sm text-muted-foreground">
-        Spenny — your money, mapped.
+        Too Spenny — your money, mapped.
       </footer>
     </div>
   );

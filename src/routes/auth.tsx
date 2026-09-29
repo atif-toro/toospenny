@@ -12,10 +12,10 @@ import { SpennyLogo } from "@/components/brand";
 export const Route = createFileRoute("/auth")({
   head: () => ({
     meta: [
-      { title: "Sign in — Spenny" },
-      { name: "description", content: "Sign in or create your Spenny account." },
-      { property: "og:title", content: "Sign in — Spenny" },
-      { property: "og:description", content: "Sign in or create your Spenny account." },
+      { title: "Sign in — Too Spenny" },
+      { name: "description", content: "Sign in or create your Too Spenny account." },
+      { property: "og:title", content: "Sign in — Too Spenny" },
+      { property: "og:description", content: "Sign in or create your Too Spenny account." },
       { property: "og:type", content: "website" },
       { name: "twitter:card", content: "summary" },
     ],
@@ -150,7 +150,7 @@ function AuthPage() {
               </Button>
 
               <p className="mt-6 text-center text-sm text-muted-foreground">
-                {mode === "signin" ? "New to Spenny?" : "Already have an account?"}{" "}
+                {mode === "signin" ? "New to Too Spenny?" : "Already have an account?"}{" "}
                 <button
                   type="button"
                   className="font-semibold text-primary hover:underline"

@@ -33,9 +33,9 @@ import { formatPence, parsePoundsToPence, todayISO } from "@/lib/money";
 export const Route = createFileRoute("/_authenticated/debts")({
   head: () => ({
     meta: [
-      { title: "Debts — Spenny" },
+      { title: "Debts — Too Spenny" },
       { name: "description", content: "Track every debt and record your payments." },
-      { property: "og:title", content: "Debts — Spenny" },
+      { property: "og:title", content: "Debts — Too Spenny" },
       { property: "og:description", content: "Track every debt and record your payments." },
       { property: "og:type", content: "website" },
       { name: "twitter:card", content: "summary" },
@@ -130,7 +130,7 @@ function DebtsPage() {
         <div className="mt-6 rounded-xl border border-dashed bg-card/50 px-6 py-14 text-center">
           <h3 className="font-display text-xl font-semibold">No debts tracked</h3>
           <p className="mx-auto mt-2 max-w-sm text-sm text-muted-foreground">
-            Add your credit cards, loans or mortgage and Spenny will build your debt-free plan.
+            Add your credit cards, loans or mortgage and Too Spenny will build your debt-free plan.
           </p>
           <Button className="mt-5" onClick={() => setAddOpen(true)}>
             <Plus className="mr-2 h-4 w-4" /> Add your first debt

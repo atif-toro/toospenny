@@ -27,9 +27,9 @@ import { formatDate, formatPence, parsePoundsToPence, todayISO } from "@/lib/mon
 export const Route = createFileRoute("/_authenticated/goals")({
   head: () => ({
     meta: [
-      { title: "Goals — Spenny" },
+      { title: "Goals — Too Spenny" },
       { name: "description", content: "Savings goals with progress you can see." },
-      { property: "og:title", content: "Goals — Spenny" },
+      { property: "og:title", content: "Goals — Too Spenny" },
       { property: "og:description", content: "Savings goals with progress you can see." },
       { property: "og:type", content: "website" },
       { name: "twitter:card", content: "summary" },

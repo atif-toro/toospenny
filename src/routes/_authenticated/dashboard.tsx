@@ -36,9 +36,9 @@ const dashboardQuery = queryOptions({
 export const Route = createFileRoute("/_authenticated/dashboard")({
   head: () => ({
     meta: [
-      { title: "Dashboard — Spenny" },
+      { title: "Dashboard — Too Spenny" },
       { name: "description", content: "Your net worth, cash flow and spending at a glance." },
-      { property: "og:title", content: "Dashboard — Spenny" },
+      { property: "og:title", content: "Dashboard — Too Spenny" },
       { property: "og:description", content: "Your net worth, cash flow and spending at a glance." },
       { property: "og:type", content: "website" },
       { name: "twitter:card", content: "summary" },
