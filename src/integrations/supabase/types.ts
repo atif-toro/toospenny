@@ -47,6 +47,114 @@ export type Database = {
         }
         Relationships: []
       }
+      bill_payments: {
+        Row: {
+          amount_pence: number
+          bill_id: string
+          created_at: string
+          id: string
+          paid_on: string
+          period: string
+          transaction_id: string | null
+          user_id: string
+        }
+        Insert: {
+          amount_pence: number
+          bill_id: string
+          created_at?: string
+          id?: string
+          paid_on?: string
+          period: string
+          transaction_id?: string | null
+          user_id: string
+        }
+        Update: {
+          amount_pence?: number
+          bill_id?: string
+          created_at?: string
+          id?: string
+          paid_on?: string
+          period?: string
+          transaction_id?: string | null
+          user_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "bill_payments_bill_id_fkey"
+            columns: ["bill_id"]
+            isOneToOne: false
+            referencedRelation: "bills"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "bill_payments_transaction_id_fkey"
+            columns: ["transaction_id"]
+            isOneToOne: false
+            referencedRelation: "transactions"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      bills: {
+        Row: {
+          account_id: string | null
+          active: boolean
+          amount_pence: number
+          cadence: string
+          category_id: string | null
+          created_at: string
+          due_day: number
+          id: string
+          kind: string
+          name: string
+          note: string | null
+          user_id: string
+        }
+        Insert: {
+          account_id?: string | null
+          active?: boolean
+          amount_pence: number
+          cadence?: string
+          category_id?: string | null
+          created_at?: string
+          due_day?: number
+          id?: string
+          kind?: string
+          name: string
+          note?: string | null
+          user_id: string
+        }
+        Update: {
+          account_id?: string | null
+          active?: boolean
+          amount_pence?: number
+          cadence?: string
+          category_id?: string | null
+          created_at?: string
+          due_day?: number
+          id?: string
+          kind?: string
+          name?: string
+          note?: string | null
+          user_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "bills_account_id_fkey"
+            columns: ["account_id"]
+            isOneToOne: false
+            referencedRelation: "accounts"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "bills_category_id_fkey"
+            columns: ["category_id"]
+            isOneToOne: false
+            referencedRelation: "categories"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       budgets: {
         Row: {
           category_id: string

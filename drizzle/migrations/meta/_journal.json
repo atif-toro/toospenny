@@ -8,6 +8,13 @@
       "when": 1790611877032,
       "tag": "0000_create_finance_schema",
       "breakpoints": true
+    },
+    {
+      "idx": 1,
+      "version": "7",
+      "when": 1790690267680,
+      "tag": "0001_create_bills",
+      "breakpoints": true
     }
   ]
 }
