@@ -934,6 +934,7 @@ export const listBills = createServerFn({ method: "GET" })
         period,
         status,
         last_paid_on: lastPaid.get(id) ?? null,
+        paid_period: isPaid ? currentPeriod : null,
         monthly_cost_pence: monthlyCostPence(amount, cadence),
       } satisfies BillRow;
     });
