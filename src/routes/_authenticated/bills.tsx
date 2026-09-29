@@ -38,12 +38,12 @@ import { formatDate, formatPence, parsePoundsToPence, todayISO } from "@/lib/mon
 export const Route = createFileRoute("/_authenticated/bills")({
   head: () => ({
     meta: [
-      { title: "Bills & subscriptions — Spenny" },
+      { title: "Outgoings — Spenny" },
       {
         name: "description",
         content: "Track rent, utilities and subscriptions, and see what's due next.",
       },
-      { property: "og:title", content: "Bills & subscriptions — Spenny" },
+      { property: "og:title", content: "Outgoings — Spenny" },
       {
         property: "og:description",
         content: "Track rent, utilities and subscriptions, and see what's due next.",
@@ -167,7 +167,7 @@ function BillsPage() {
   return (
     <div>
       <PageHeader
-        title="Bills & subscriptions"
+        title="Outgoings"
         description="Rent, utilities and the small monthly ones that add up."
         action={
           <Button
@@ -212,7 +212,7 @@ function BillsPage() {
         <p className="text-center text-sm text-muted-foreground">Loading…</p>
       ) : bills.length === 0 ? (
         <EmptyState
-          title="No bills tracked yet"
+          title="No outgoings tracked yet"
           body="Add your rent, water, energy and subscriptions to see exactly what leaves your account each month."
           action={
             <Button
