@@ -559,8 +559,8 @@ function TransferDialog({
           onSubmit={(e) => {
             e.preventDefault();
             const pence = Math.round(parseFloat(amount) * 100);
-            if (!fromId || !to) return toast.error("Choose where the money moves from and to");
-            if (!(pence > 0)) return toast.error("Enter an amount");
+            if (!fromId || !to) { toast.error("Choose where the money moves from and to"); return; }
+            if (!(pence > 0)) { toast.error("Enter an amount"); return; }
             const [kind, id] = to.split(":");
             save.mutate({
               data: {
