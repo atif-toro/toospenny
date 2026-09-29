@@ -314,9 +314,9 @@ function UpcomingBills() {
   return (
     <section className="mt-4 rounded-xl border bg-card p-5 shadow-sm">
       <div className="mb-4 flex items-center justify-between">
-        <h2 className="font-display text-lg font-semibold">Upcoming bills</h2>
+        <h2 className="font-display text-lg font-semibold">Upcoming outgoings</h2>
         <Link to="/bills" className="text-xs text-primary hover:underline">
-          Manage bills
+          Manage outgoings
         </Link>
       </div>
       {due.length === 0 ? (
