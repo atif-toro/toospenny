@@ -1,6 +1,14 @@
 import { createServerFn } from "@tanstack/react-start";
 import { z } from "zod";
 import { requireSupabaseAuth } from "@/integrations/supabase/auth-middleware";
+import {
+  daysUntil,
+  monthlyCostPence,
+  periodKey,
+  upcomingDueDates,
+  type BillKind,
+  type Cadence,
+} from "@/lib/bills";
 
 /* ---------------------------------- types --------------------------------- */
 
