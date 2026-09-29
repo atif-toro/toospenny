@@ -148,9 +148,14 @@ function TransactionsPage() {
         title="Transactions"
         description="Every penny in and out."
         action={
-          <Button onClick={() => setAddOpen(true)}>
-            <Plus className="mr-2 h-4 w-4" /> Add transaction
-          </Button>
+          <div className="flex gap-2">
+            <Button variant="outline" onClick={() => setTransferOpen(true)}>
+              <ArrowLeftRight className="mr-2 h-4 w-4" /> Transfer
+            </Button>
+            <Button onClick={() => setAddOpen(true)}>
+              <Plus className="mr-2 h-4 w-4" /> Add transaction
+            </Button>
+          </div>
         }
       />
 
@@ -183,9 +188,10 @@ function TransactionsPage() {
             <SelectValue />
           </SelectTrigger>
           <SelectContent>
-            <SelectItem value="all">In & out</SelectItem>
+            <SelectItem value="all">Everything</SelectItem>
             <SelectItem value="income">Money in</SelectItem>
             <SelectItem value="expense">Money out</SelectItem>
+            <SelectItem value="transfer">Transfers</SelectItem>
           </SelectContent>
         </Select>
         <Select value={categoryId} onValueChange={setCategoryId}>
@@ -212,7 +218,7 @@ function TransactionsPage() {
       <div className="mt-4 overflow-hidden rounded-xl border bg-card shadow-sm">
         {isLoading ? (
           <p className="py-10 text-center text-sm text-muted-foreground">Loading…</p>
-        ) : transactions.length === 0 ? (
+        ) : rows.length === 0 ? (
           <p className="py-10 text-center text-sm text-muted-foreground">
             Nothing here yet — add a transaction to get started.
           </p>
@@ -229,40 +235,79 @@ function TransactionsPage() {
               </tr>
             </thead>
             <tbody className="divide-y">
-              {transactions.map((t) => (
-                <tr key={t.id} className="hover:bg-accent/40">
-                  <td className="whitespace-nowrap px-4 py-2.5 text-muted-foreground">{t.date}</td>
-                  <td className="max-w-[16rem] truncate px-4 py-2.5 font-medium">
-                    {t.note || "—"}
-                  </td>
-                  <td className="hidden px-4 py-2.5 text-muted-foreground sm:table-cell">
-                    {t.category_name ?? "—"}
-                  </td>
-                  <td className="hidden px-4 py-2.5 text-muted-foreground md:table-cell">
-                    {t.account_name ?? "—"}
-                  </td>
-                  <td
-                    className={
-                      "whitespace-nowrap px-4 py-2.5 text-right font-semibold tabular-nums " +
-                      (t.type === "income" ? "text-chart-1" : "")
-                    }
-                  >
-                    {t.type === "income" ? "+" : "−"}
-                    {formatPence(t.amount_pence)}
-                  </td>
-                  <td className="px-2 py-2.5">
-                    <Button
-                      variant="ghost"
-                      size="icon"
-                      className="h-7 w-7 text-muted-foreground hover:text-destructive"
-                      aria-label="Delete transaction"
-                      onClick={() => remove.mutate({ data: { id: t.id } })}
+              {rows.map((r) =>
+                r.kind === "tr" ? (
+                  <tr key={"tr-" + r.tr.id} className="hover:bg-accent/40">
+                    <td className="whitespace-nowrap px-4 py-2.5 text-muted-foreground">
+                      {r.tr.date}
+                    </td>
+                    <td className="max-w-[16rem] truncate px-4 py-2.5 font-medium">
+                      <span className="inline-flex items-center gap-1.5">
+                        <ArrowLeftRight className="h-3.5 w-3.5 text-muted-foreground" />
+                        {r.tr.from_name ?? "Deleted account"} → {r.tr.to_name ?? "Deleted"}
+                      </span>
+                      {r.tr.note && (
+                        <span className="ml-2 text-muted-foreground">· {r.tr.note}</span>
+                      )}
+                    </td>
+                    <td className="hidden px-4 py-2.5 text-muted-foreground sm:table-cell">
+                      {r.tr.to_kind === "debt" ? "Debt payment" : "Transfer"}
+                    </td>
+                    <td className="hidden px-4 py-2.5 text-muted-foreground md:table-cell">
+                      {r.tr.from_name ?? "—"}
+                    </td>
+                    <td className="whitespace-nowrap px-4 py-2.5 text-right font-semibold tabular-nums text-muted-foreground">
+                      {formatPence(r.tr.amount_pence)}
+                    </td>
+                    <td className="px-2 py-2.5">
+                      <Button
+                        variant="ghost"
+                        size="icon"
+                        className="h-7 w-7 text-muted-foreground hover:text-destructive"
+                        aria-label="Delete transfer"
+                        onClick={() => removeTransfer.mutate({ data: { id: r.tr.id } })}
+                      >
+                        <Trash2 className="h-3.5 w-3.5" />
+                      </Button>
+                    </td>
+                  </tr>
+                ) : (
+                  <tr key={r.tx.id} className="hover:bg-accent/40">
+                    <td className="whitespace-nowrap px-4 py-2.5 text-muted-foreground">
+                      {r.tx.date}
+                    </td>
+                    <td className="max-w-[16rem] truncate px-4 py-2.5 font-medium">
+                      {r.tx.note || "—"}
+                    </td>
+                    <td className="hidden px-4 py-2.5 text-muted-foreground sm:table-cell">
+                      {r.tx.category_name ?? "—"}
+                    </td>
+                    <td className="hidden px-4 py-2.5 text-muted-foreground md:table-cell">
+                      {r.tx.account_name ?? "—"}
+                    </td>
+                    <td
+                      className={
+                        "whitespace-nowrap px-4 py-2.5 text-right font-semibold tabular-nums " +
+                        (r.tx.type === "income" ? "text-chart-1" : "")
+                      }
                     >
-                      <Trash2 className="h-3.5 w-3.5" />
-                    </Button>
-                  </td>
-                </tr>
-              ))}
+                      {r.tx.type === "income" ? "+" : "−"}
+                      {formatPence(r.tx.amount_pence)}
+                    </td>
+                    <td className="px-2 py-2.5">
+                      <Button
+                        variant="ghost"
+                        size="icon"
+                        className="h-7 w-7 text-muted-foreground hover:text-destructive"
+                        aria-label="Delete transaction"
+                        onClick={() => remove.mutate({ data: { id: r.tx.id } })}
+                      >
+                        <Trash2 className="h-3.5 w-3.5" />
+                      </Button>
+                    </td>
+                  </tr>
+                ),
+              )}
             </tbody>
           </table>
         )}
@@ -273,6 +318,13 @@ function TransactionsPage() {
         onOpenChange={setAddOpen}
         accounts={accounts.map((a) => ({ id: a.id, name: a.name }))}
         categories={categories}
+        onSaved={invalidate}
+      />
+      <TransferDialog
+        open={transferOpen}
+        onOpenChange={setTransferOpen}
+        accounts={accounts.filter((a) => !a.archived).map((a) => ({ id: a.id, name: a.name }))}
+        debts={debts.map((d) => ({ id: d.id, name: d.name }))}
         onSaved={invalidate}
       />
     </div>
