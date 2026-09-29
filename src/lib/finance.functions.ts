@@ -176,7 +176,11 @@ export const listCategories = createServerFn({ method: "GET" })
 /* ------------------------------ transactions ------------------------------ */
 
 const transactionFilter = z.object({
-  month: z.string().regex(/^\d{4}-\d{2}$/).optional(),
+  month: z
+    .string()
+    .regex(/^\d{4}-\d{2}(-\d{2})?$/)
+    .transform((v) => v.slice(0, 7))
+    .optional(),
   categoryId: z.string().uuid().optional(),
   accountId: z.string().uuid().optional(),
   type: z.enum(["income", "expense"]).optional(),
