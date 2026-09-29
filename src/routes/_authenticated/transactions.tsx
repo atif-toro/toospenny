@@ -1,7 +1,7 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useEffect, useMemo, useState } from "react";
-import { Loader2, Plus, Trash2 } from "lucide-react";
+import { ArrowLeftRight, Loader2, Plus, Trash2 } from "lucide-react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import {
@@ -16,18 +16,25 @@ import { Label } from "@/components/ui/label";
 import {
   Select,
   SelectContent,
+  SelectGroup,
   SelectItem,
+  SelectLabel,
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
 import { PageHeader, StatCard } from "@/components/finance-ui";
 import { RouteError, RouteNotFound } from "@/components/route-states";
 import {
+  createTransfer,
   deleteTransaction,
+  deleteTransfer,
   listAccounts,
   listCategories,
+  listDebts,
   listTransactions,
+  listTransfers,
   saveTransaction,
+  type TransferRow,
 } from "@/lib/finance.functions";
 import { formatPence, monthKey, monthLabel, todayISO } from "@/lib/money";
 
@@ -61,10 +68,14 @@ function TransactionsPage() {
     queryFn: () => listCategories(),
   });
 
+  const { data: debts = [] } = useQuery({ queryKey: ["debts"], queryFn: () => listDebts() });
+  const [transferOpen, setTransferOpen] = useState(false);
+  const showTransfers = type === "all" || type === "transfer";
+
   const filter = useMemo(
     () => ({
       month: month === "all" ? undefined : month,
-      type: type === "all" ? undefined : (type as "income" | "expense"),
+      type: type === "all" || type === "transfer" ? undefined : (type as "income" | "expense"),
       categoryId: categoryId === "all" ? undefined : categoryId,
       search: search.trim() || undefined,
       limit: 500,
@@ -72,13 +83,35 @@ function TransactionsPage() {
     [month, type, categoryId, search],
   );
 
-  const { data: transactions = [], isLoading } = useQuery({
+  const { data: rawTransactions = [], isLoading } = useQuery({
     queryKey: ["transactions", filter],
     queryFn: () => listTransactions({ data: filter }),
   });
+  const transactions = type === "transfer" ? [] : rawTransactions;
+
+  const { data: rawTransfers = [] } = useQuery({
+    queryKey: ["transfers", month],
+    queryFn: () => listTransfers({ data: { month: month === "all" ? undefined : month } }),
+  });
+  const transfers =
+    showTransfers && categoryId === "all"
+      ? rawTransfers.filter(
+          (t) => !search.trim() || (t.note ?? "").toLowerCase().includes(search.trim().toLowerCase()),
+        )
+      : [];
+
+  type Row =
+    | { kind: "tx"; date: string; tx: (typeof transactions)[number] }
+    | { kind: "tr"; date: string; tr: TransferRow };
+  const rows: Row[] = [
+    ...transactions.map((tx) => ({ kind: "tx" as const, date: tx.date, tx })),
+    ...transfers.map((tr) => ({ kind: "tr" as const, date: tr.date, tr })),
+  ].sort((a, b) => (a.date < b.date ? 1 : a.date > b.date ? -1 : 0));
 
   const invalidate = () => {
     queryClient.invalidateQueries({ queryKey: ["transactions"] });
+    queryClient.invalidateQueries({ queryKey: ["transfers"] });
+    queryClient.invalidateQueries({ queryKey: ["debts"] });
     queryClient.invalidateQueries({ queryKey: ["dashboard"] });
     queryClient.invalidateQueries({ queryKey: ["budgets"] });
     queryClient.invalidateQueries({ queryKey: ["accounts"] });
@@ -88,6 +121,15 @@ function TransactionsPage() {
     mutationFn: deleteTransaction,
     onSuccess: () => {
       toast.success("Transaction deleted");
+      invalidate();
+    },
+    onError: (e) => toast.error(e.message),
+  });
+
+  const removeTransfer = useMutation({
+    mutationFn: deleteTransfer,
+    onSuccess: () => {
+      toast.success("Transfer deleted — balances restored");
       invalidate();
     },
     onError: (e) => toast.error(e.message),
