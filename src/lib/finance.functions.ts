@@ -842,6 +842,8 @@ export type BillRow = {
   period: string;
   status: "paid" | "overdue" | "due_soon" | "upcoming";
   last_paid_on: string | null;
+  /** Period already settled for the current cycle, when status is "paid". */
+  paid_period: string | null;
   monthly_cost_pence: number;
 };
 
