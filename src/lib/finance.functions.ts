@@ -176,7 +176,11 @@ export const listCategories = createServerFn({ method: "GET" })
 /* ------------------------------ transactions ------------------------------ */
 
 const transactionFilter = z.object({
-  month: z.string().regex(/^\d{4}-\d{2}$/).optional(),
+  month: z
+    .string()
+    .regex(/^\d{4}-\d{2}(-\d{2})?$/)
+    .transform((v) => v.slice(0, 7))
+    .optional(),
   categoryId: z.string().uuid().optional(),
   accountId: z.string().uuid().optional(),
   type: z.enum(["income", "expense"]).optional(),
@@ -234,6 +238,36 @@ export const listTransactions = createServerFn({ method: "POST" })
     }) as TransactionRow[];
   });
 
+/** Signed effect a transaction has on its account balance. */
+function txDelta(type: "income" | "expense", amountPence: number): number {
+  return type === "income" ? amountPence : -amountPence;
+}
+
+/** Apply a signed change to an account's balance. */
+async function adjustAccountBalance(
+  supabase: { from: (t: string) => any },
+  userId: string,
+  accountId: string | null,
+  deltaPence: number,
+): Promise<void> {
+  if (!accountId || deltaPence === 0) return;
+  const { data, error } = await supabase
+    .from("accounts")
+    .select("balance_pence")
+    .eq("id", accountId)
+    .eq("user_id", userId)
+    .maybeSingle();
+  if (error) throw new Error(error.message);
+  if (!data) return;
+  const next = Number(data.balance_pence) + deltaPence;
+  const { error: upError } = await supabase
+    .from("accounts")
+    .update({ balance_pence: next })
+    .eq("id", accountId)
+    .eq("user_id", userId);
+  if (upError) throw new Error(upError.message);
+}
+
 export const saveTransaction = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
   .inputValidator((input: unknown) =>
@@ -260,10 +294,47 @@ export const saveTransaction = createServerFn({ method: "POST" })
       date: data.date,
       note: data.note ?? null,
     };
-    const { error } = data.id
-      ? await supabase.from("transactions").update(payload).eq("id", data.id).eq("user_id", userId)
-      : await supabase.from("transactions").insert(payload);
-    if (error) throw new Error(error.message);
+    if (data.id) {
+      // Undo the old row's effect on its account before applying the new one.
+      const { data: prev, error: prevError } = await supabase
+        .from("transactions")
+        .select("account_id, type, amount_pence")
+        .eq("id", data.id)
+        .eq("user_id", userId)
+        .maybeSingle();
+      if (prevError) throw new Error(prevError.message);
+
+      const { error } = await supabase
+        .from("transactions")
+        .update(payload)
+        .eq("id", data.id)
+        .eq("user_id", userId);
+      if (error) throw new Error(error.message);
+
+      if (prev) {
+        await adjustAccountBalance(
+          supabase,
+          userId,
+          prev.account_id as string | null,
+          -txDelta(prev.type as "income" | "expense", Number(prev.amount_pence)),
+        );
+      }
+      await adjustAccountBalance(
+        supabase,
+        userId,
+        payload.account_id,
+        txDelta(data.type, data.amount_pence),
+      );
+    } else {
+      const { error } = await supabase.from("transactions").insert(payload);
+      if (error) throw new Error(error.message);
+      await adjustAccountBalance(
+        supabase,
+        userId,
+        payload.account_id,
+        txDelta(data.type, data.amount_pence),
+      );
+    }
     return { ok: true };
   });
 
@@ -271,12 +342,30 @@ export const deleteTransaction = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
   .inputValidator((input: unknown) => z.object({ id: z.string().uuid() }).parse(input))
   .handler(async ({ context, data }) => {
-    const { error } = await context.supabase
+    const { supabase, userId } = context;
+    const { data: prev, error: prevError } = await supabase
+      .from("transactions")
+      .select("account_id, type, amount_pence")
+      .eq("id", data.id)
+      .eq("user_id", userId)
+      .maybeSingle();
+    if (prevError) throw new Error(prevError.message);
+
+    const { error } = await supabase
       .from("transactions")
       .delete()
       .eq("id", data.id)
-      .eq("user_id", context.userId);
+      .eq("user_id", userId);
     if (error) throw new Error(error.message);
+
+    if (prev) {
+      await adjustAccountBalance(
+        supabase,
+        userId,
+        prev.account_id as string | null,
+        -txDelta(prev.type as "income" | "expense", Number(prev.amount_pence)),
+      );
+    }
     return { ok: true };
   });
 
