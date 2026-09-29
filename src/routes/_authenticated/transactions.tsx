@@ -508,3 +508,160 @@ function AddTransactionDialog({
     </Dialog>
   );
 }
+
+function TransferDialog({
+  open,
+  onOpenChange,
+  accounts,
+  debts,
+  onSaved,
+}: {
+  open: boolean;
+  onOpenChange: (v: boolean) => void;
+  accounts: { id: string; name: string }[];
+  debts: { id: string; name: string }[];
+  onSaved: () => void;
+}) {
+  const [fromId, setFromId] = useState("");
+  const [to, setTo] = useState("");
+  const [amount, setAmount] = useState("");
+  const [date, setDate] = useState(todayISO());
+  const [note, setNote] = useState("");
+
+  useEffect(() => {
+    if (!open) return;
+    setFromId(accounts[0]?.id ?? "");
+    setTo("");
+    setAmount("");
+    setNote("");
+    setDate(todayISO());
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [open]);
+
+  const save = useMutation({
+    mutationFn: createTransfer,
+    onSuccess: () => {
+      toast.success("Transfer logged");
+      onSaved();
+      onOpenChange(false);
+    },
+    onError: (e) => toast.error(e.message),
+  });
+
+  return (
+    <Dialog open={open} onOpenChange={onOpenChange}>
+      <DialogContent className="sm:max-w-md">
+        <DialogHeader>
+          <DialogTitle>Transfer money</DialogTitle>
+        </DialogHeader>
+        <form
+          className="space-y-4"
+          onSubmit={(e) => {
+            e.preventDefault();
+            const pence = Math.round(parseFloat(amount) * 100);
+            if (!fromId || !to) return toast.error("Choose where the money moves from and to");
+            if (!(pence > 0)) return toast.error("Enter an amount");
+            const [kind, id] = to.split(":");
+            save.mutate({
+              data: {
+                from_account_id: fromId,
+                to_account_id: kind === "acc" ? id : null,
+                to_debt_id: kind === "debt" ? id : null,
+                amount_pence: pence,
+                date,
+                note: note.trim() || null,
+              },
+            });
+          }}
+        >
+          <div className="space-y-1.5">
+            <Label>From</Label>
+            <Select value={fromId} onValueChange={setFromId}>
+              <SelectTrigger>
+                <SelectValue placeholder="Choose account" />
+              </SelectTrigger>
+              <SelectContent>
+                {accounts.map((a) => (
+                  <SelectItem key={a.id} value={a.id}>
+                    {a.name}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
+          <div className="space-y-1.5">
+            <Label>To</Label>
+            <Select value={to} onValueChange={setTo}>
+              <SelectTrigger>
+                <SelectValue placeholder="Choose account or debt" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectGroup>
+                  <SelectLabel>Accounts</SelectLabel>
+                  {accounts
+                    .filter((a) => a.id !== fromId)
+                    .map((a) => (
+                      <SelectItem key={a.id} value={"acc:" + a.id}>
+                        {a.name}
+                      </SelectItem>
+                    ))}
+                </SelectGroup>
+                {debts.length > 0 && (
+                  <SelectGroup>
+                    <SelectLabel>Debts (pay off)</SelectLabel>
+                    {debts.map((d) => (
+                      <SelectItem key={d.id} value={"debt:" + d.id}>
+                        {d.name}
+                      </SelectItem>
+                    ))}
+                  </SelectGroup>
+                )}
+              </SelectContent>
+            </Select>
+          </div>
+          <div className="grid grid-cols-2 gap-3">
+            <div className="space-y-1.5">
+              <Label htmlFor="tr-amount">Amount (£)</Label>
+              <Input
+                id="tr-amount"
+                required
+                inputMode="decimal"
+                placeholder="0.00"
+                value={amount}
+                onChange={(e) => setAmount(e.target.value)}
+              />
+            </div>
+            <div className="space-y-1.5">
+              <Label htmlFor="tr-date">Date</Label>
+              <Input
+                id="tr-date"
+                type="date"
+                required
+                value={date}
+                onChange={(e) => setDate(e.target.value)}
+              />
+            </div>
+          </div>
+          <div className="space-y-1.5">
+            <Label htmlFor="tr-note">Note (optional)</Label>
+            <Input
+              id="tr-note"
+              placeholder="e.g. Credit card payment"
+              value={note}
+              onChange={(e) => setNote(e.target.value)}
+            />
+          </div>
+          <DialogFooter>
+            <Button type="button" variant="outline" onClick={() => onOpenChange(false)}>
+              Cancel
+            </Button>
+            <Button type="submit" disabled={save.isPending}>
+              {save.isPending && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
+              Log transfer
+            </Button>
+          </DialogFooter>
+        </form>
+      </DialogContent>
+    </Dialog>
+  );
+}
