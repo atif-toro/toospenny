@@ -113,6 +113,8 @@ export function DashboardPage() {
         />
       </div>
 
+      <UpcomingBills />
+
       <div className="mt-4 grid gap-4 lg:grid-cols-5">
         <section className="rounded-xl border bg-card p-5 shadow-sm lg:col-span-3">
           <div className="mb-4 flex items-center justify-between">
