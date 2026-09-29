@@ -128,15 +128,6 @@ export const BANK_PRESETS: BankPreset[] = [
     dateFormat: "dmy",
   },
   {
-    id: "hsbc",
-    label: "HSBC",
-    signature: ["date", "description", "amount"],
-    dateColumns: ["date"],
-    descriptionColumns: ["description"],
-    amountColumns: ["amount"],
-    dateFormat: "dmy",
-  },
-  {
     id: "santander",
     label: "Santander",
     signature: ["from:", "to:", "account:"],
@@ -174,15 +165,6 @@ export const BANK_PRESETS: BankPreset[] = [
     debitColumns: ["paid out"],
     creditColumns: ["paid in"],
     dateFormat: "dmy",
-  },
-  {
-    id: "chase",
-    label: "Chase UK",
-    signature: ["transaction date", "description", "amount"],
-    dateColumns: ["transaction date", "date"],
-    descriptionColumns: ["description", "merchant"],
-    amountColumns: ["amount"],
-    dateFormat: "auto",
   },
   {
     id: "amex",
@@ -306,14 +288,11 @@ function findHeaderIndex(rows: string[][]): number {
 
 export function detectBank(headers: string[]): BankPreset {
   const lower = headers.map((h) => h.trim().toLowerCase());
-  let best: { preset: BankPreset; score: number } | null = null;
   for (const preset of BANK_PRESETS) {
-    const hits = preset.signature.filter((s) => lower.includes(s)).length;
-    if (hits === preset.signature.length && hits > 0) {
-      if (!best || hits > best.score) best = { preset, score: hits };
-    }
+    if (preset.signature.length === 0) continue;
+    if (preset.signature.every((s) => lower.includes(s))) return preset;
   }
-  return best?.preset ?? GENERIC_PRESET;
+  return GENERIC_PRESET;
 }
 
 /* ------------------------------- values ---------------------------------- */
