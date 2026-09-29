@@ -167,7 +167,7 @@ function BillsPage() {
   return (
     <div>
       <PageHeader
-        title="Bills & subscriptions"
+        title="Outgoings"
         description="Rent, utilities and the small monthly ones that add up."
         action={
           <Button
