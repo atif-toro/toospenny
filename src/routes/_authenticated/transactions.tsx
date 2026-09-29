@@ -23,6 +23,7 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { PageHeader, StatCard } from "@/components/finance-ui";
+import { ImportStatementDialog } from "@/components/import-statement-dialog";
 import { RouteError, RouteNotFound } from "@/components/route-states";
 import {
   createTransfer,
@@ -148,7 +149,8 @@ function TransactionsPage() {
         title="Transactions"
         description="Every penny in and out."
         action={
-          <div className="flex gap-2">
+          <div className="flex flex-wrap gap-2">
+            <ImportStatementDialog accounts={accounts} categories={categories} />
             <Button variant="outline" onClick={() => setTransferOpen(true)}>
               <ArrowLeftRight className="mr-2 h-4 w-4" /> Transfer
             </Button>
