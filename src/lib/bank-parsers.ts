@@ -417,7 +417,10 @@ export function parseStatement(text: string, forced?: BankPreset): ParseResult {
   const amountIdx = hasSeparate ? -1 : pickIndex(headers, merged.amountColumns);
   const debitIdx = pickIndex(headers, merged.debitColumns);
   const creditIdx = pickIndex(headers, merged.creditColumns);
-  const stateIdx = pickIndex(headers, ["state", "status"]);
+  const lowerHeaders = headers.map((h) => h.trim().toLowerCase());
+  const stateIdx = lowerHeaders.indexOf("state") !== -1
+    ? lowerHeaders.indexOf("state")
+    : lowerHeaders.indexOf("status");
 
   const rows: ParsedRow[] = [];
   let skipped = 0;
