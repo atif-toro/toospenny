@@ -1,7 +1,7 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useEffect, useMemo, useState } from "react";
-import { Loader2, Plus, Trash2 } from "lucide-react";
+import { ArrowLeftRight, Loader2, Plus, Trash2 } from "lucide-react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import {
@@ -16,18 +16,25 @@ import { Label } from "@/components/ui/label";
 import {
   Select,
   SelectContent,
+  SelectGroup,
   SelectItem,
+  SelectLabel,
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
 import { PageHeader, StatCard } from "@/components/finance-ui";
 import { RouteError, RouteNotFound } from "@/components/route-states";
 import {
+  createTransfer,
   deleteTransaction,
+  deleteTransfer,
   listAccounts,
   listCategories,
+  listDebts,
   listTransactions,
+  listTransfers,
   saveTransaction,
+  type TransferRow,
 } from "@/lib/finance.functions";
 import { formatPence, monthKey, monthLabel, todayISO } from "@/lib/money";
 
@@ -61,10 +68,14 @@ function TransactionsPage() {
     queryFn: () => listCategories(),
   });
 
+  const { data: debts = [] } = useQuery({ queryKey: ["debts"], queryFn: () => listDebts() });
+  const [transferOpen, setTransferOpen] = useState(false);
+  const showTransfers = type === "all" || type === "transfer";
+
   const filter = useMemo(
     () => ({
       month: month === "all" ? undefined : month,
-      type: type === "all" ? undefined : (type as "income" | "expense"),
+      type: type === "all" || type === "transfer" ? undefined : (type as "income" | "expense"),
       categoryId: categoryId === "all" ? undefined : categoryId,
       search: search.trim() || undefined,
       limit: 500,
@@ -72,13 +83,35 @@ function TransactionsPage() {
     [month, type, categoryId, search],
   );
 
-  const { data: transactions = [], isLoading } = useQuery({
+  const { data: rawTransactions = [], isLoading } = useQuery({
     queryKey: ["transactions", filter],
     queryFn: () => listTransactions({ data: filter }),
   });
+  const transactions = type === "transfer" ? [] : rawTransactions;
+
+  const { data: rawTransfers = [] } = useQuery({
+    queryKey: ["transfers", month],
+    queryFn: () => listTransfers({ data: { month: month === "all" ? undefined : month } }),
+  });
+  const transfers =
+    showTransfers && categoryId === "all"
+      ? rawTransfers.filter(
+          (t) => !search.trim() || (t.note ?? "").toLowerCase().includes(search.trim().toLowerCase()),
+        )
+      : [];
+
+  type Row =
+    | { kind: "tx"; date: string; tx: (typeof transactions)[number] }
+    | { kind: "tr"; date: string; tr: TransferRow };
+  const rows: Row[] = [
+    ...transactions.map((tx) => ({ kind: "tx" as const, date: tx.date, tx })),
+    ...transfers.map((tr) => ({ kind: "tr" as const, date: tr.date, tr })),
+  ].sort((a, b) => (a.date < b.date ? 1 : a.date > b.date ? -1 : 0));
 
   const invalidate = () => {
     queryClient.invalidateQueries({ queryKey: ["transactions"] });
+    queryClient.invalidateQueries({ queryKey: ["transfers"] });
+    queryClient.invalidateQueries({ queryKey: ["debts"] });
     queryClient.invalidateQueries({ queryKey: ["dashboard"] });
     queryClient.invalidateQueries({ queryKey: ["budgets"] });
     queryClient.invalidateQueries({ queryKey: ["accounts"] });
@@ -88,6 +121,15 @@ function TransactionsPage() {
     mutationFn: deleteTransaction,
     onSuccess: () => {
       toast.success("Transaction deleted");
+      invalidate();
+    },
+    onError: (e) => toast.error(e.message),
+  });
+
+  const removeTransfer = useMutation({
+    mutationFn: deleteTransfer,
+    onSuccess: () => {
+      toast.success("Transfer deleted — balances restored");
       invalidate();
     },
     onError: (e) => toast.error(e.message),
@@ -106,9 +148,14 @@ function TransactionsPage() {
         title="Transactions"
         description="Every penny in and out."
         action={
-          <Button onClick={() => setAddOpen(true)}>
-            <Plus className="mr-2 h-4 w-4" /> Add transaction
-          </Button>
+          <div className="flex gap-2">
+            <Button variant="outline" onClick={() => setTransferOpen(true)}>
+              <ArrowLeftRight className="mr-2 h-4 w-4" /> Transfer
+            </Button>
+            <Button onClick={() => setAddOpen(true)}>
+              <Plus className="mr-2 h-4 w-4" /> Add transaction
+            </Button>
+          </div>
         }
       />
 
@@ -141,9 +188,10 @@ function TransactionsPage() {
             <SelectValue />
           </SelectTrigger>
           <SelectContent>
-            <SelectItem value="all">In & out</SelectItem>
+            <SelectItem value="all">Everything</SelectItem>
             <SelectItem value="income">Money in</SelectItem>
             <SelectItem value="expense">Money out</SelectItem>
+            <SelectItem value="transfer">Transfers</SelectItem>
           </SelectContent>
         </Select>
         <Select value={categoryId} onValueChange={setCategoryId}>
@@ -170,7 +218,7 @@ function TransactionsPage() {
       <div className="mt-4 overflow-hidden rounded-xl border bg-card shadow-sm">
         {isLoading ? (
           <p className="py-10 text-center text-sm text-muted-foreground">Loading…</p>
-        ) : transactions.length === 0 ? (
+        ) : rows.length === 0 ? (
           <p className="py-10 text-center text-sm text-muted-foreground">
             Nothing here yet — add a transaction to get started.
           </p>
@@ -187,40 +235,79 @@ function TransactionsPage() {
               </tr>
             </thead>
             <tbody className="divide-y">
-              {transactions.map((t) => (
-                <tr key={t.id} className="hover:bg-accent/40">
-                  <td className="whitespace-nowrap px-4 py-2.5 text-muted-foreground">{t.date}</td>
-                  <td className="max-w-[16rem] truncate px-4 py-2.5 font-medium">
-                    {t.note || "—"}
-                  </td>
-                  <td className="hidden px-4 py-2.5 text-muted-foreground sm:table-cell">
-                    {t.category_name ?? "—"}
-                  </td>
-                  <td className="hidden px-4 py-2.5 text-muted-foreground md:table-cell">
-                    {t.account_name ?? "—"}
-                  </td>
-                  <td
-                    className={
-                      "whitespace-nowrap px-4 py-2.5 text-right font-semibold tabular-nums " +
-                      (t.type === "income" ? "text-chart-1" : "")
-                    }
-                  >
-                    {t.type === "income" ? "+" : "−"}
-                    {formatPence(t.amount_pence)}
-                  </td>
-                  <td className="px-2 py-2.5">
-                    <Button
-                      variant="ghost"
-                      size="icon"
-                      className="h-7 w-7 text-muted-foreground hover:text-destructive"
-                      aria-label="Delete transaction"
-                      onClick={() => remove.mutate({ data: { id: t.id } })}
+              {rows.map((r) =>
+                r.kind === "tr" ? (
+                  <tr key={"tr-" + r.tr.id} className="hover:bg-accent/40">
+                    <td className="whitespace-nowrap px-4 py-2.5 text-muted-foreground">
+                      {r.tr.date}
+                    </td>
+                    <td className="max-w-[16rem] truncate px-4 py-2.5 font-medium">
+                      <span className="inline-flex items-center gap-1.5">
+                        <ArrowLeftRight className="h-3.5 w-3.5 text-muted-foreground" />
+                        {r.tr.from_name ?? "Deleted account"} → {r.tr.to_name ?? "Deleted"}
+                      </span>
+                      {r.tr.note && (
+                        <span className="ml-2 text-muted-foreground">· {r.tr.note}</span>
+                      )}
+                    </td>
+                    <td className="hidden px-4 py-2.5 text-muted-foreground sm:table-cell">
+                      {r.tr.to_kind === "debt" ? "Debt payment" : "Transfer"}
+                    </td>
+                    <td className="hidden px-4 py-2.5 text-muted-foreground md:table-cell">
+                      {r.tr.from_name ?? "—"}
+                    </td>
+                    <td className="whitespace-nowrap px-4 py-2.5 text-right font-semibold tabular-nums text-muted-foreground">
+                      {formatPence(r.tr.amount_pence)}
+                    </td>
+                    <td className="px-2 py-2.5">
+                      <Button
+                        variant="ghost"
+                        size="icon"
+                        className="h-7 w-7 text-muted-foreground hover:text-destructive"
+                        aria-label="Delete transfer"
+                        onClick={() => removeTransfer.mutate({ data: { id: r.tr.id } })}
+                      >
+                        <Trash2 className="h-3.5 w-3.5" />
+                      </Button>
+                    </td>
+                  </tr>
+                ) : (
+                  <tr key={r.tx.id} className="hover:bg-accent/40">
+                    <td className="whitespace-nowrap px-4 py-2.5 text-muted-foreground">
+                      {r.tx.date}
+                    </td>
+                    <td className="max-w-[16rem] truncate px-4 py-2.5 font-medium">
+                      {r.tx.note || "—"}
+                    </td>
+                    <td className="hidden px-4 py-2.5 text-muted-foreground sm:table-cell">
+                      {r.tx.category_name ?? "—"}
+                    </td>
+                    <td className="hidden px-4 py-2.5 text-muted-foreground md:table-cell">
+                      {r.tx.account_name ?? "—"}
+                    </td>
+                    <td
+                      className={
+                        "whitespace-nowrap px-4 py-2.5 text-right font-semibold tabular-nums " +
+                        (r.tx.type === "income" ? "text-chart-1" : "")
+                      }
                     >
-                      <Trash2 className="h-3.5 w-3.5" />
-                    </Button>
-                  </td>
-                </tr>
-              ))}
+                      {r.tx.type === "income" ? "+" : "−"}
+                      {formatPence(r.tx.amount_pence)}
+                    </td>
+                    <td className="px-2 py-2.5">
+                      <Button
+                        variant="ghost"
+                        size="icon"
+                        className="h-7 w-7 text-muted-foreground hover:text-destructive"
+                        aria-label="Delete transaction"
+                        onClick={() => remove.mutate({ data: { id: r.tx.id } })}
+                      >
+                        <Trash2 className="h-3.5 w-3.5" />
+                      </Button>
+                    </td>
+                  </tr>
+                ),
+              )}
             </tbody>
           </table>
         )}
@@ -231,6 +318,13 @@ function TransactionsPage() {
         onOpenChange={setAddOpen}
         accounts={accounts.map((a) => ({ id: a.id, name: a.name }))}
         categories={categories}
+        onSaved={invalidate}
+      />
+      <TransferDialog
+        open={transferOpen}
+        onOpenChange={setTransferOpen}
+        accounts={accounts.filter((a) => !a.archived).map((a) => ({ id: a.id, name: a.name }))}
+        debts={debts.map((d) => ({ id: d.id, name: d.name }))}
         onSaved={invalidate}
       />
     </div>
@@ -407,6 +501,163 @@ function AddTransactionDialog({
             <Button type="submit" disabled={save.isPending}>
               {save.isPending && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
               Add transaction
+            </Button>
+          </DialogFooter>
+        </form>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
+function TransferDialog({
+  open,
+  onOpenChange,
+  accounts,
+  debts,
+  onSaved,
+}: {
+  open: boolean;
+  onOpenChange: (v: boolean) => void;
+  accounts: { id: string; name: string }[];
+  debts: { id: string; name: string }[];
+  onSaved: () => void;
+}) {
+  const [fromId, setFromId] = useState("");
+  const [to, setTo] = useState("");
+  const [amount, setAmount] = useState("");
+  const [date, setDate] = useState(todayISO());
+  const [note, setNote] = useState("");
+
+  useEffect(() => {
+    if (!open) return;
+    setFromId(accounts[0]?.id ?? "");
+    setTo("");
+    setAmount("");
+    setNote("");
+    setDate(todayISO());
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [open]);
+
+  const save = useMutation({
+    mutationFn: createTransfer,
+    onSuccess: () => {
+      toast.success("Transfer logged");
+      onSaved();
+      onOpenChange(false);
+    },
+    onError: (e) => toast.error(e.message),
+  });
+
+  return (
+    <Dialog open={open} onOpenChange={onOpenChange}>
+      <DialogContent className="sm:max-w-md">
+        <DialogHeader>
+          <DialogTitle>Transfer money</DialogTitle>
+        </DialogHeader>
+        <form
+          className="space-y-4"
+          onSubmit={(e) => {
+            e.preventDefault();
+            const pence = Math.round(parseFloat(amount) * 100);
+            if (!fromId || !to) { toast.error("Choose where the money moves from and to"); return; }
+            if (!(pence > 0)) { toast.error("Enter an amount"); return; }
+            const [kind, id] = to.split(":");
+            save.mutate({
+              data: {
+                from_account_id: fromId,
+                to_account_id: kind === "acc" ? id : null,
+                to_debt_id: kind === "debt" ? id : null,
+                amount_pence: pence,
+                date,
+                note: note.trim() || null,
+              },
+            });
+          }}
+        >
+          <div className="space-y-1.5">
+            <Label>From</Label>
+            <Select value={fromId} onValueChange={setFromId}>
+              <SelectTrigger>
+                <SelectValue placeholder="Choose account" />
+              </SelectTrigger>
+              <SelectContent>
+                {accounts.map((a) => (
+                  <SelectItem key={a.id} value={a.id}>
+                    {a.name}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
+          <div className="space-y-1.5">
+            <Label>To</Label>
+            <Select value={to} onValueChange={setTo}>
+              <SelectTrigger>
+                <SelectValue placeholder="Choose account or debt" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectGroup>
+                  <SelectLabel>Accounts</SelectLabel>
+                  {accounts
+                    .filter((a) => a.id !== fromId)
+                    .map((a) => (
+                      <SelectItem key={a.id} value={"acc:" + a.id}>
+                        {a.name}
+                      </SelectItem>
+                    ))}
+                </SelectGroup>
+                {debts.length > 0 && (
+                  <SelectGroup>
+                    <SelectLabel>Debts (pay off)</SelectLabel>
+                    {debts.map((d) => (
+                      <SelectItem key={d.id} value={"debt:" + d.id}>
+                        {d.name}
+                      </SelectItem>
+                    ))}
+                  </SelectGroup>
+                )}
+              </SelectContent>
+            </Select>
+          </div>
+          <div className="grid grid-cols-2 gap-3">
+            <div className="space-y-1.5">
+              <Label htmlFor="tr-amount">Amount (£)</Label>
+              <Input
+                id="tr-amount"
+                required
+                inputMode="decimal"
+                placeholder="0.00"
+                value={amount}
+                onChange={(e) => setAmount(e.target.value)}
+              />
+            </div>
+            <div className="space-y-1.5">
+              <Label htmlFor="tr-date">Date</Label>
+              <Input
+                id="tr-date"
+                type="date"
+                required
+                value={date}
+                onChange={(e) => setDate(e.target.value)}
+              />
+            </div>
+          </div>
+          <div className="space-y-1.5">
+            <Label htmlFor="tr-note">Note (optional)</Label>
+            <Input
+              id="tr-note"
+              placeholder="e.g. Credit card payment"
+              value={note}
+              onChange={(e) => setNote(e.target.value)}
+            />
+          </div>
+          <DialogFooter>
+            <Button type="button" variant="outline" onClick={() => onOpenChange(false)}>
+              Cancel
+            </Button>
+            <Button type="submit" disabled={save.isPending}>
+              {save.isPending && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
+              Log transfer
             </Button>
           </DialogFooter>
         </form>

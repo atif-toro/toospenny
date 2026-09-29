@@ -693,6 +693,171 @@ export const deleteDebt = createServerFn({ method: "POST" })
     return { ok: true };
   });
 
+/* -------------------------------- transfers ------------------------------- */
+
+export type TransferRow = {
+  id: string;
+  from_account_id: string | null;
+  to_account_id: string | null;
+  to_debt_id: string | null;
+  amount_pence: number;
+  date: string;
+  note: string | null;
+  from_name: string | null;
+  to_name: string | null;
+  to_kind: "account" | "debt";
+};
+
+export const listTransfers = createServerFn({ method: "POST" })
+  .middleware([requireSupabaseAuth])
+  .inputValidator((input: unknown) =>
+    z
+      .object({ month: z.string().regex(/^\d{4}-\d{2}(-\d{2})?$/).optional() })
+      .parse(input ?? {}),
+  )
+  .handler(async ({ context, data }): Promise<TransferRow[]> => {
+    const { supabase, userId } = context;
+    let q = supabase
+      .from("transfers")
+      .select("*")
+      .eq("user_id", userId)
+      .order("date", { ascending: false })
+      .order("created_at", { ascending: false });
+    if (data.month) {
+      const [ys, ms] = data.month.split("-");
+      const y = Number(ys);
+      const m = Number(ms);
+      const last = new Date(Date.UTC(y, m, 0)).getUTCDate();
+      const mm = String(m).padStart(2, "0");
+      q = q.gte("date", `${y}-${mm}-01`).lte("date", `${y}-${mm}-${last}`);
+    }
+    const [{ data: rows, error }, { data: accs }, { data: debts }] = await Promise.all([
+      q.limit(500),
+      supabase.from("accounts").select("id, name").eq("user_id", userId),
+      supabase.from("debts").select("id, name").eq("user_id", userId),
+    ]);
+    if (error) throw new Error(error.message);
+    const accName = new Map((accs ?? []).map((a) => [a.id, a.name]));
+    const debtName = new Map((debts ?? []).map((d) => [d.id, d.name]));
+    return (rows ?? []).map((r) => ({
+      id: r.id,
+      from_account_id: r.from_account_id,
+      to_account_id: r.to_account_id,
+      to_debt_id: r.to_debt_id,
+      amount_pence: Number(r.amount_pence),
+      date: r.date,
+      note: r.note,
+      from_name: r.from_account_id ? (accName.get(r.from_account_id) ?? null) : null,
+      to_name: r.to_debt_id
+        ? (debtName.get(r.to_debt_id) ?? null)
+        : r.to_account_id
+          ? (accName.get(r.to_account_id) ?? null)
+          : null,
+      to_kind: r.to_debt_id ? "debt" : "account",
+    }));
+  });
+
+export const createTransfer = createServerFn({ method: "POST" })
+  .middleware([requireSupabaseAuth])
+  .inputValidator((input: unknown) =>
+    z
+      .object({
+        from_account_id: z.string().uuid(),
+        to_account_id: z.string().uuid().nullish(),
+        to_debt_id: z.string().uuid().nullish(),
+        amount_pence: z.number().int().positive(),
+        date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
+        note: z.string().max(300).nullish(),
+      })
+      .refine((d) => !!d.to_account_id !== !!d.to_debt_id, "Pick one destination")
+      .refine((d) => d.to_account_id !== d.from_account_id, "From and To must differ")
+      .parse(input),
+  )
+  .handler(async ({ context, data }) => {
+    const { supabase, userId } = context;
+    let debtPaymentId: string | null = null;
+    if (data.to_debt_id) {
+      const { data: debt, error } = await supabase
+        .from("debts")
+        .select("balance_pence")
+        .eq("id", data.to_debt_id)
+        .eq("user_id", userId)
+        .single();
+      if (error) throw new Error(error.message);
+      const { data: pay, error: pErr } = await supabase
+        .from("debt_payments")
+        .insert({
+          user_id: userId,
+          debt_id: data.to_debt_id,
+          amount_pence: data.amount_pence,
+          date: data.date,
+          note: data.note ?? "Transfer",
+        })
+        .select("id")
+        .single();
+      if (pErr) throw new Error(pErr.message);
+      debtPaymentId = pay.id;
+      const { error: uErr } = await supabase
+        .from("debts")
+        .update({ balance_pence: Math.max(0, Number(debt.balance_pence) - data.amount_pence) })
+        .eq("id", data.to_debt_id)
+        .eq("user_id", userId);
+      if (uErr) throw new Error(uErr.message);
+    }
+    const { error } = await supabase.from("transfers").insert({
+      user_id: userId,
+      from_account_id: data.from_account_id,
+      to_account_id: data.to_account_id ?? null,
+      to_debt_id: data.to_debt_id ?? null,
+      debt_payment_id: debtPaymentId,
+      amount_pence: data.amount_pence,
+      date: data.date,
+      note: data.note ?? null,
+    });
+    if (error) throw new Error(error.message);
+    await adjustAccountBalance(supabase, userId, data.from_account_id, -data.amount_pence);
+    await adjustAccountBalance(supabase, userId, data.to_account_id ?? null, data.amount_pence);
+    return { ok: true };
+  });
+
+export const deleteTransfer = createServerFn({ method: "POST" })
+  .middleware([requireSupabaseAuth])
+  .inputValidator((input: unknown) => z.object({ id: z.string().uuid() }).parse(input))
+  .handler(async ({ context, data }) => {
+    const { supabase, userId } = context;
+    const { data: t, error } = await supabase
+      .from("transfers")
+      .select("*")
+      .eq("id", data.id)
+      .eq("user_id", userId)
+      .single();
+    if (error) throw new Error(error.message);
+    const amt = Number(t.amount_pence);
+    await adjustAccountBalance(supabase, userId, t.from_account_id, amt);
+    await adjustAccountBalance(supabase, userId, t.to_account_id, -amt);
+    if (t.to_debt_id) {
+      const { data: debt } = await supabase
+        .from("debts")
+        .select("balance_pence")
+        .eq("id", t.to_debt_id)
+        .eq("user_id", userId)
+        .maybeSingle();
+      if (debt) {
+        await supabase
+          .from("debts")
+          .update({ balance_pence: Number(debt.balance_pence) + amt })
+          .eq("id", t.to_debt_id)
+          .eq("user_id", userId);
+      }
+    }
+    const { error: dErr } = await supabase.from("transfers").delete().eq("id", data.id).eq("user_id", userId);
+    if (dErr) throw new Error(dErr.message);
+    if (t.debt_payment_id) {
+      await supabase.from("debt_payments").delete().eq("id", t.debt_payment_id).eq("user_id", userId);
+    }
+    return { ok: true };
+  });
+
 /* -------------------------------- dashboard ------------------------------- */
 
 export const getDashboard = createServerFn({ method: "GET" })
