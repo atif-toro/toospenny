@@ -23,7 +23,7 @@ const NAV = [
   { to: "/dashboard", label: "Dashboard", icon: LayoutDashboard },
   { to: "/accounts", label: "Accounts", icon: Wallet },
   { to: "/transactions", label: "Transactions", icon: ArrowLeftRight },
-  { to: "/bills", label: "Bills & subs", icon: Receipt },
+  { to: "/bills", label: "Outgoings", icon: Receipt },
   { to: "/budgets", label: "Budgets", icon: PiggyBank },
   { to: "/goals", label: "Goals", icon: Target },
   { to: "/debts", label: "Debts", icon: CreditCard },
