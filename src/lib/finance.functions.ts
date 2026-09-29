@@ -1,6 +1,14 @@
 import { createServerFn } from "@tanstack/react-start";
 import { z } from "zod";
 import { requireSupabaseAuth } from "@/integrations/supabase/auth-middleware";
+import {
+  daysUntil,
+  monthlyCostPence,
+  periodKey,
+  upcomingDueDates,
+  type BillKind,
+  type Cadence,
+} from "@/lib/bills";
 
 /* ---------------------------------- types --------------------------------- */
 
@@ -811,3 +819,284 @@ export const getDashboard = createServerFn({ method: "GET" })
     };
   });
 
+
+/* ---------------------------- bills & subs -------------------------------- */
+
+export type BillRow = {
+  id: string;
+  name: string;
+  kind: BillKind;
+  amount_pence: number;
+  cadence: Cadence;
+  due_day: number;
+  account_id: string | null;
+  account_name: string | null;
+  category_id: string | null;
+  category_name: string | null;
+  note: string | null;
+  active: boolean;
+  created_at: string;
+  /** Due date of the cycle that still needs paying (or the next one if paid). */
+  due_date: string;
+  /** Period key the next payment is recorded against. */
+  period: string;
+  status: "paid" | "overdue" | "due_soon" | "upcoming";
+  last_paid_on: string | null;
+  /** Period already settled for the current cycle, when status is "paid". */
+  paid_period: string | null;
+  monthly_cost_pence: number;
+};
+
+function utcTodayISO(): string {
+  return new Date().toISOString().slice(0, 10);
+}
+
+export const listBills = createServerFn({ method: "GET" })
+  .middleware([requireSupabaseAuth])
+  .handler(async ({ context }) => {
+    const { supabase, userId } = context;
+
+    const [{ data: bills, error }, { data: payments, error: payError }] = await Promise.all([
+      supabase
+        .from("bills")
+        .select(
+          "id, name, kind, amount_pence, cadence, due_day, account_id, category_id, note, active, created_at, accounts(name), categories(name)",
+        )
+        .eq("user_id", userId)
+        .order("due_day", { ascending: true }),
+      supabase.from("bill_payments").select("bill_id, period, paid_on").eq("user_id", userId),
+    ]);
+    if (error) throw new Error(error.message);
+    if (payError) throw new Error(payError.message);
+
+    const paidByBill = new Map<string, Set<string>>();
+    const lastPaid = new Map<string, string>();
+    for (const p of payments ?? []) {
+      const set = paidByBill.get(p.bill_id) ?? new Set<string>();
+      set.add(p.period);
+      paidByBill.set(p.bill_id, set);
+      const prev = lastPaid.get(p.bill_id);
+      if (!prev || p.paid_on > prev) lastPaid.set(p.bill_id, p.paid_on);
+    }
+
+    const today = utcTodayISO();
+    const monthStartISO = today.slice(0, 7) + "-01";
+
+    return (bills ?? []).map((r) => {
+      const row = r as Record<string, unknown>;
+      const id = row["id"] as string;
+      const cadence = row["cadence"] as Cadence;
+      const dueDay = Number(row["due_day"]);
+      const created = row["created_at"] as string;
+      const paid = paidByBill.get(id) ?? new Set<string>();
+
+      const candidates = upcomingDueDates(cadence, dueDay, created.slice(0, 10), monthStartISO, 6);
+      const currentDue = candidates[0] ?? today;
+      const currentPeriod = periodKey(cadence, currentDue);
+      const isPaid = paid.has(currentPeriod);
+
+      let dueDate = currentDue;
+      let period = currentPeriod;
+      if (isPaid) {
+        const next = candidates.find((c) => !paid.has(periodKey(cadence, c)));
+        if (next) {
+          dueDate = next;
+          period = periodKey(cadence, next);
+        }
+      }
+
+      const diff = daysUntil(isPaid ? currentDue : dueDate, today);
+      const status: BillRow["status"] = isPaid
+        ? "paid"
+        : diff < 0
+          ? "overdue"
+          : diff <= 7
+            ? "due_soon"
+            : "upcoming";
+
+      const acc = row["accounts"] as { name: string } | null;
+      const cat = row["categories"] as { name: string } | null;
+      const amount = Number(row["amount_pence"]);
+
+      return {
+        id,
+        name: row["name"] as string,
+        kind: row["kind"] as BillKind,
+        amount_pence: amount,
+        cadence,
+        due_day: dueDay,
+        account_id: row["account_id"] as string | null,
+        account_name: acc?.name ?? null,
+        category_id: row["category_id"] as string | null,
+        category_name: cat?.name ?? null,
+        note: row["note"] as string | null,
+        active: row["active"] as boolean,
+        created_at: created,
+        due_date: dueDate,
+        period,
+        status,
+        last_paid_on: lastPaid.get(id) ?? null,
+        paid_period: isPaid ? currentPeriod : null,
+        monthly_cost_pence: monthlyCostPence(amount, cadence),
+      } satisfies BillRow;
+    });
+  });
+
+export const saveBill = createServerFn({ method: "POST" })
+  .middleware([requireSupabaseAuth])
+  .inputValidator((input: unknown) =>
+    z
+      .object({
+        id: z.string().uuid().optional(),
+        name: z.string().min(1).max(80),
+        kind: z.enum(["fixed", "subscription"]),
+        amount_pence: z.number().int().min(0),
+        cadence: z.enum(["weekly", "monthly", "quarterly", "annual"]),
+        due_day: z.number().int().min(1).max(31),
+        account_id: z.string().uuid().nullish(),
+        category_id: z.string().uuid().nullish(),
+        note: z.string().max(300).nullish(),
+        active: z.boolean().optional(),
+      })
+      .parse(input),
+  )
+  .handler(async ({ context, data }) => {
+    const { supabase, userId } = context;
+    const payload = {
+      user_id: userId,
+      name: data.name,
+      kind: data.kind,
+      amount_pence: data.amount_pence,
+      cadence: data.cadence,
+      due_day: data.due_day,
+      account_id: data.account_id ?? null,
+      category_id: data.category_id ?? null,
+      note: data.note ?? null,
+      ...(data.active !== undefined ? { active: data.active } : {}),
+    };
+    const { error } = data.id
+      ? await supabase.from("bills").update(payload).eq("id", data.id).eq("user_id", userId)
+      : await supabase.from("bills").insert(payload);
+    if (error) throw new Error(error.message);
+    return { ok: true };
+  });
+
+export const deleteBill = createServerFn({ method: "POST" })
+  .middleware([requireSupabaseAuth])
+  .inputValidator((input: unknown) => z.object({ id: z.string().uuid() }).parse(input))
+  .handler(async ({ context, data }) => {
+    const { error } = await context.supabase
+      .from("bills")
+      .delete()
+      .eq("id", data.id)
+      .eq("user_id", context.userId);
+    if (error) throw new Error(error.message);
+    return { ok: true };
+  });
+
+/** Record a bill as paid for a period, optionally logging the expense. */
+export const markBillPaid = createServerFn({ method: "POST" })
+  .middleware([requireSupabaseAuth])
+  .inputValidator((input: unknown) =>
+    z
+      .object({
+        bill_id: z.string().uuid(),
+        period: z.string().min(4).max(10),
+        amount_pence: z.number().int().min(0),
+        paid_on: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
+        log_transaction: z.boolean().optional(),
+      })
+      .parse(input),
+  )
+  .handler(async ({ context, data }) => {
+    const { supabase, userId } = context;
+
+    const { data: bill, error: billError } = await supabase
+      .from("bills")
+      .select("id, name, account_id, category_id")
+      .eq("id", data.bill_id)
+      .eq("user_id", userId)
+      .maybeSingle();
+    if (billError) throw new Error(billError.message);
+    if (!bill) throw new Error("Bill not found");
+
+    let transactionId: string | null = null;
+    if (data.log_transaction !== false && data.amount_pence > 0) {
+      const { data: tx, error: txError } = await supabase
+        .from("transactions")
+        .insert({
+          user_id: userId,
+          account_id: bill.account_id,
+          category_id: bill.category_id,
+          type: "expense",
+          amount_pence: data.amount_pence,
+          date: data.paid_on,
+          note: bill.name,
+        })
+        .select("id")
+        .single();
+      if (txError) throw new Error(txError.message);
+      transactionId = tx.id;
+      await adjustAccountBalance(supabase, userId, bill.account_id, -data.amount_pence);
+    }
+
+    const { error } = await supabase.from("bill_payments").insert({
+      user_id: userId,
+      bill_id: data.bill_id,
+      period: data.period,
+      amount_pence: data.amount_pence,
+      paid_on: data.paid_on,
+      transaction_id: transactionId,
+    });
+    if (error) throw new Error(error.message);
+    return { ok: true };
+  });
+
+/** Undo a recorded payment for a period, reversing any logged expense. */
+export const unmarkBillPaid = createServerFn({ method: "POST" })
+  .middleware([requireSupabaseAuth])
+  .inputValidator((input: unknown) =>
+    z.object({ bill_id: z.string().uuid(), period: z.string().min(4).max(10) }).parse(input),
+  )
+  .handler(async ({ context, data }) => {
+    const { supabase, userId } = context;
+    const { data: payment, error: payError } = await supabase
+      .from("bill_payments")
+      .select("id, transaction_id")
+      .eq("bill_id", data.bill_id)
+      .eq("period", data.period)
+      .eq("user_id", userId)
+      .maybeSingle();
+    if (payError) throw new Error(payError.message);
+    if (!payment) return { ok: true };
+
+    if (payment.transaction_id) {
+      const { data: tx } = await supabase
+        .from("transactions")
+        .select("account_id, type, amount_pence")
+        .eq("id", payment.transaction_id)
+        .eq("user_id", userId)
+        .maybeSingle();
+      await supabase
+        .from("transactions")
+        .delete()
+        .eq("id", payment.transaction_id)
+        .eq("user_id", userId);
+      if (tx) {
+        await adjustAccountBalance(
+          supabase,
+          userId,
+          tx.account_id as string | null,
+          -txDelta(tx.type as "income" | "expense", Number(tx.amount_pence)),
+        );
+      }
+    }
+
+    const { error } = await supabase
+      .from("bill_payments")
+      .delete()
+      .eq("id", payment.id)
+      .eq("user_id", userId);
+    if (error) throw new Error(error.message);
+    return { ok: true };
+  });

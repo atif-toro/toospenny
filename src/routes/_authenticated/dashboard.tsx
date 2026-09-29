@@ -1,5 +1,5 @@
 import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
-import { useSuspenseQuery } from "@tanstack/react-query";
+import { useQuery, useSuspenseQuery } from "@tanstack/react-query";
 import { queryOptions } from "@tanstack/react-query";
 import {
   ArrowDownRight,
@@ -25,8 +25,8 @@ import {
 import { Button } from "@/components/ui/button";
 import { EmptyState, PageHeader, StatCard } from "@/components/finance-ui";
 import { RouteError, RouteNotFound } from "@/components/route-states";
-import { getDashboard } from "@/lib/finance.functions";
-import { formatPence, monthLabel } from "@/lib/money";
+import { getDashboard, listBills } from "@/lib/finance.functions";
+import { formatDate, formatPence, monthLabel } from "@/lib/money";
 
 const dashboardQuery = queryOptions({
   queryKey: ["dashboard"],
@@ -112,6 +112,8 @@ export function DashboardPage() {
           valueClassName={net >= 0 ? "text-chart-1" : "text-destructive"}
         />
       </div>
+
+      <UpcomingBills />
 
       <div className="mt-4 grid gap-4 lg:grid-cols-5">
         <section className="rounded-xl border bg-card p-5 shadow-sm lg:col-span-3">
@@ -295,5 +297,57 @@ export function DashboardPage() {
         )}
       </section>
     </div>
+  );
+}
+
+function UpcomingBills() {
+  const { data: bills = [] } = useQuery({ queryKey: ["bills"], queryFn: () => listBills() });
+  const due = bills
+    .filter((b) => b.active && b.status !== "paid")
+    .sort((a, b) => a.due_date.localeCompare(b.due_date))
+    .slice(0, 5);
+
+  if (bills.length === 0) return null;
+
+  const total = due.reduce((s, b) => s + b.amount_pence, 0);
+
+  return (
+    <section className="mt-4 rounded-xl border bg-card p-5 shadow-sm">
+      <div className="mb-4 flex items-center justify-between">
+        <h2 className="font-display text-lg font-semibold">Upcoming bills</h2>
+        <Link to="/bills" className="text-xs text-primary hover:underline">
+          Manage bills
+        </Link>
+      </div>
+      {due.length === 0 ? (
+        <p className="text-sm text-muted-foreground">Everything is paid up. Nice.</p>
+      ) : (
+        <>
+          <ul className="divide-y">
+            {due.map((b) => (
+              <li key={b.id} className="flex items-center justify-between gap-3 py-2.5 text-sm">
+                <div className="min-w-0">
+                  <p className="truncate font-medium">{b.name}</p>
+                  <p className="text-xs text-muted-foreground">
+                    Due {formatDate(b.due_date)}
+                    {b.status === "overdue" ? " · overdue" : ""}
+                  </p>
+                </div>
+                <span
+                  className={
+                    "tabular-nums " + (b.status === "overdue" ? "text-destructive" : "")
+                  }
+                >
+                  {formatPence(b.amount_pence)}
+                </span>
+              </li>
+            ))}
+          </ul>
+          <p className="mt-3 text-xs text-muted-foreground">
+            {formatPence(total)} still to leave your accounts.
+          </p>
+        </>
+      )}
+    </section>
   );
 }
