@@ -38,12 +38,12 @@ import { formatDate, formatPence, parsePoundsToPence, todayISO } from "@/lib/mon
 export const Route = createFileRoute("/_authenticated/bills")({
   head: () => ({
     meta: [
-      { title: "Bills & subscriptions — Spenny" },
+      { title: "Outgoings — Spenny" },
       {
         name: "description",
         content: "Track rent, utilities and subscriptions, and see what's due next.",
       },
-      { property: "og:title", content: "Bills & subscriptions — Spenny" },
+      { property: "og:title", content: "Outgoings — Spenny" },
       {
         property: "og:description",
         content: "Track rent, utilities and subscriptions, and see what's due next.",
