@@ -463,7 +463,11 @@ export function parseStatement(text: string, forced?: BankPreset): ParseResult {
         return idx === -1 ? "" : cell(idx);
       })
       .filter(Boolean);
-    const description = (cell(descIdx) || parts[0] || "Imported transaction").slice(0, 200);
+    const description = (cell(descIdx) || parts[0] || "Imported transaction")
+      .replace(/^['"\s]+/, "")
+      .replace(/\s+/g, " ")
+      .trim()
+      .slice(0, 200);
 
     rows.push({
       date,
