@@ -377,6 +377,110 @@ export const deleteTransaction = createServerFn({ method: "POST" })
     return { ok: true };
   });
 
+/* ----------------------------- statement import --------------------------- */
+
+/** Existing transactions in a date window, used to flag duplicate imports. */
+export const listExistingForImport = createServerFn({ method: "POST" })
+  .middleware([requireSupabaseAuth])
+  .inputValidator((input: unknown) =>
+    z
+      .object({
+        accountId: z.string().uuid(),
+        from: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
+        to: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
+      })
+      .parse(input),
+  )
+  .handler(async ({ context, data }) => {
+    const { supabase, userId } = context;
+    const { data: rows, error } = await supabase
+      .from("transactions")
+      .select("date, type, amount_pence, note")
+      .eq("user_id", userId)
+      .eq("account_id", data.accountId)
+      .gte("date", data.from)
+      .lte("date", data.to);
+    if (error) throw new Error(error.message);
+    return (rows ?? []).map((r: Record<string, unknown>) => ({
+      date: r["date"] as string,
+      type: r["type"] as "income" | "expense",
+      amount_pence: Number(r["amount_pence"]),
+      note: (r["note"] as string | null) ?? "",
+    }));
+  });
+
+/** Bulk-insert reviewed statement rows and sync the account balance. */
+export const importTransactions = createServerFn({ method: "POST" })
+  .middleware([requireSupabaseAuth])
+  .inputValidator((input: unknown) =>
+    z
+      .object({
+        accountId: z.string().uuid(),
+        rows: z
+          .array(
+            z.object({
+              date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
+              type: z.enum(["income", "expense"]),
+              amount_pence: z.number().int().positive(),
+              note: z.string().max(300),
+              category_id: z.string().uuid().nullish(),
+              category_name: z.string().max(60).nullish(),
+            }),
+          )
+          .min(1)
+          .max(2000),
+      })
+      .parse(input),
+  )
+  .handler(async ({ context, data }) => {
+    const { supabase, userId } = context;
+
+    // Resolve (and create where needed) categories referenced by name.
+    const { data: cats, error: catError } = await supabase
+      .from("categories")
+      .select("id, name, kind")
+      .eq("user_id", userId);
+    if (catError) throw new Error(catError.message);
+    const byName = new Map<string, string>();
+    for (const c of cats ?? []) {
+      byName.set(`${(c.name as string).toLowerCase()}|${c.kind}`, c.id as string);
+    }
+
+    for (const row of data.rows) {
+      if (row.category_id || !row.category_name) continue;
+      const key = `${row.category_name.toLowerCase()}|${row.type}`;
+      if (byName.has(key)) continue;
+      const { data: created, error: createError } = await supabase
+        .from("categories")
+        .insert({ user_id: userId, name: row.category_name, kind: row.type })
+        .select("id")
+        .single();
+      if (createError) throw new Error(createError.message);
+      byName.set(key, created.id as string);
+    }
+
+    const payload = data.rows.map((row) => ({
+      user_id: userId,
+      account_id: data.accountId,
+      category_id:
+        row.category_id ??
+        (row.category_name ? (byName.get(`${row.category_name.toLowerCase()}|${row.type}`) ?? null) : null),
+      type: row.type,
+      amount_pence: row.amount_pence,
+      date: row.date,
+      note: row.note,
+    }));
+
+    const { error } = await supabase.from("transactions").insert(payload);
+    if (error) throw new Error(error.message);
+
+    const delta = data.rows.reduce((sum, r) => sum + txDelta(r.type, r.amount_pence), 0);
+    await adjustAccountBalance(supabase, userId, data.accountId, delta);
+
+    return { imported: data.rows.length, deltaPence: delta };
+  });
+
+
 /* --------------------------------- budgets -------------------------------- */
 
 export type BudgetRow = {
