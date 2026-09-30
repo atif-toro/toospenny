@@ -1567,3 +1567,272 @@ export const getSpennyScore = createServerFn({ method: "GET" })
       previousMonth: prevStart,
     };
   });
+
+/* ------------------------ reconciliation & review ------------------------ */
+
+export type ReviewItem = TransactionRow & {
+  suggestion: {
+    classification: Classification;
+    counterpartTxId?: string | null;
+    counterpartAccountId?: string | null;
+    confidence: string;
+    kind: "transfer" | "internal" | "duplicate" | "salary";
+    duplicateOfId?: string | null;
+  } | null;
+  counterpart: { id: string; note: string | null; date: string; account_name: string | null } | null;
+};
+
+async function loadAllTransactions(supabase: { from: (t: string) => any }, userId: string) {
+  const rows: Record<string, unknown>[] = [];
+  for (let from = 0; ; from += 1000) {
+    const { data, error } = await supabase
+      .from("transactions")
+      .select(`${TX_SELECT}, suggestion, accounts(name, type)`.replace(", accounts(name)", ""))
+      .eq("user_id", userId)
+      .order("id")
+      .range(from, from + 999);
+    if (error) throw new Error(error.message);
+    rows.push(...(data ?? []));
+    if (!data || data.length < 1000) break;
+  }
+  return rows;
+}
+
+/**
+ * Classify every transaction across all accounts: transfers, pot movements,
+ * duplicates and salary. Idempotent — user decisions are never touched and
+ * re-running writes identical values (no new records are created).
+ */
+export const reconcileTransactions = createServerFn({ method: "POST" })
+  .middleware([requireSupabaseAuth])
+  .handler(async ({ context }): Promise<RecSummary & { changed: number; total: number }> => {
+    const { supabase, userId } = context;
+    const rows = await loadAllTransactions(supabase, userId);
+    const recTxs: RecTx[] = rows.map((r) => {
+      const acc = r["accounts"] as { name: string; type: string } | null;
+      return {
+        id: r["id"] as string,
+        accountId: r["account_id"] as string | null,
+        accountName: acc?.name ?? null,
+        accountType: acc?.type ?? null,
+        date: r["date"] as string,
+        direction: r["type"] === "income" ? "in" : "out",
+        amountPence: Number(r["amount_pence"]),
+        note: (r["note"] as string | null) ?? "",
+        locked: r["classification_source"] === "user",
+      };
+    });
+    const results = reconcile(recTxs);
+    const byId = new Map(rows.map((r) => [r["id"] as string, r]));
+    const now = new Date().toISOString();
+    const updates = results
+      .map((res) => {
+        const prev = byId.get(res.id)!;
+        const next = {
+          classification: res.classification,
+          confidence: res.confidence,
+          link_id: res.linkId,
+          counterpart_account_id: res.counterpartAccountId,
+          duplicate_of: res.duplicateOf,
+          review_status: res.needsReview ? "needs_review" : "none",
+          reasons: res.reasons,
+          suggestion: res.suggestion,
+        };
+        const same = (Object.keys(next) as (keyof typeof next)[]).every(
+          (k) => JSON.stringify(prev[k] ?? null) === JSON.stringify(next[k] ?? null),
+        );
+        return same ? null : { id: res.id, ...next, reconciled_at: now };
+      })
+      .filter((u): u is NonNullable<typeof u> => !!u);
+
+    for (let i = 0; i < updates.length; i += 25) {
+      await Promise.all(
+        updates.slice(i, i + 25).map(async ({ id, ...u }) => {
+          const { error } = await supabase.from("transactions").update(u).eq("id", id).eq("user_id", userId);
+          if (error) throw new Error(error.message);
+        }),
+      );
+    }
+    return { ...summarise(recTxs, results), changed: updates.length, total: rows.length };
+  });
+
+export const listReviewItems = createServerFn({ method: "GET" })
+  .middleware([requireSupabaseAuth])
+  .handler(async ({ context }): Promise<ReviewItem[]> => {
+    const { supabase, userId } = context;
+    const { data, error } = await supabase
+      .from("transactions")
+      .select(`${TX_SELECT}, suggestion`)
+      .eq("user_id", userId)
+      .eq("review_status", "needs_review")
+      .order("date", { ascending: false })
+      .limit(300);
+    if (error) throw new Error(error.message);
+    const items = (data ?? []).map((r) => ({
+      ...mapTx(r),
+      suggestion: ((r as Record<string, unknown>)["suggestion"] ?? null) as ReviewItem["suggestion"],
+      counterpart: null as ReviewItem["counterpart"],
+    }));
+    const ids = [
+      ...new Set(
+        items.flatMap((i) => [i.suggestion?.counterpartTxId, i.suggestion?.duplicateOfId]).filter((x): x is string => !!x),
+      ),
+    ];
+    if (ids.length) {
+      const { data: others, error: oErr } = await supabase
+        .from("transactions")
+        .select("id, note, date, accounts(name)")
+        .eq("user_id", userId)
+        .in("id", ids);
+      if (oErr) throw new Error(oErr.message);
+      const m = new Map(
+        (others ?? []).map((o) => [
+          o.id as string,
+          { id: o.id as string, note: o.note as string | null, date: o.date as string, account_name: ((o as Record<string, unknown>)["accounts"] as { name: string } | null)?.name ?? null },
+        ]),
+      );
+      for (const i of items) {
+        const cid = i.suggestion?.counterpartTxId ?? i.suggestion?.duplicateOfId;
+        i.counterpart = cid ? (m.get(cid) ?? null) : null;
+      }
+    }
+    return items;
+  });
+
+const classificationEnum = z.enum(["income", "expense", "transfer", "internal", "excluded"]);
+
+/** Accept or reject the suggestion on a flagged transaction. */
+export const resolveReview = createServerFn({ method: "POST" })
+  .middleware([requireSupabaseAuth])
+  .inputValidator((input: unknown) =>
+    z.object({ id: z.string().uuid(), action: z.enum(["confirm", "reject"]) }).parse(input),
+  )
+  .handler(async ({ context, data }) => {
+    const { supabase, userId } = context;
+    const { data: row, error } = await supabase
+      .from("transactions")
+      .select("id, type, account_id, reasons, suggestion, classification")
+      .eq("id", data.id)
+      .eq("user_id", userId)
+      .maybeSingle();
+    if (error) throw new Error(error.message);
+    if (!row) throw new Error("Transaction not found");
+    const sug = row.suggestion as ReviewItem["suggestion"];
+    const reasons = Array.isArray(row.reasons) ? (row.reasons as string[]) : [];
+
+    if (data.action === "reject" || !sug) {
+      const { error: e } = await supabase
+        .from("transactions")
+        .update({
+          classification_source: "user",
+          review_status: "dismissed",
+          duplicate_of: null,
+          classification: sug?.kind === "duplicate" ? row.classification : row.type,
+          link_id: null,
+          counterpart_account_id: null,
+          reasons: [...reasons.filter((r) => !r.startsWith("Not changed")), "You chose to keep this separate"],
+        })
+        .eq("id", data.id)
+        .eq("user_id", userId);
+      if (e) throw new Error(e.message);
+      // Release a reserved partner so it can be reviewed on its own.
+      if (sug?.counterpartTxId) {
+        await supabase
+          .from("transactions")
+          .update({ review_status: "none", suggestion: null, confidence: null })
+          .eq("id", sug.counterpartTxId)
+          .eq("user_id", userId)
+          .eq("classification_source", "auto");
+      }
+      return { ok: true };
+    }
+
+    const confirmed = [...reasons.filter((r) => !r.startsWith("Not changed")), "You confirmed this"];
+    const linkId = sug.counterpartTxId
+      ? [data.id, sug.counterpartTxId].sort().join(":")
+      : null;
+    const { error: e } = await supabase
+      .from("transactions")
+      .update({
+        classification: sug.classification,
+        classification_source: "user",
+        review_status: "confirmed",
+        link_id: linkId,
+        counterpart_account_id: sug.counterpartAccountId ?? (sug.classification === "internal" ? row.account_id : null),
+        reasons: confirmed,
+      })
+      .eq("id", data.id)
+      .eq("user_id", userId);
+    if (e) throw new Error(e.message);
+    if (sug.counterpartTxId) {
+      const { error: e2 } = await supabase
+        .from("transactions")
+        .update({
+          classification: sug.classification,
+          classification_source: "user",
+          review_status: "confirmed",
+          link_id: linkId,
+          counterpart_account_id: row.account_id,
+          reasons: confirmed,
+        })
+        .eq("id", sug.counterpartTxId)
+        .eq("user_id", userId);
+      if (e2) throw new Error(e2.message);
+    }
+    return { ok: true };
+  });
+
+/** Manually set what a transaction really is. */
+export const setClassification = createServerFn({ method: "POST" })
+  .middleware([requireSupabaseAuth])
+  .inputValidator((input: unknown) =>
+    z
+      .object({
+        id: z.string().uuid(),
+        classification: classificationEnum,
+        counterpart_account_id: z.string().uuid().nullish(),
+      })
+      .parse(input),
+  )
+  .handler(async ({ context, data }) => {
+    const { supabase, userId } = context;
+    const { data: row, error } = await supabase
+      .from("transactions")
+      .select("id, link_id, account_id")
+      .eq("id", data.id)
+      .eq("user_id", userId)
+      .maybeSingle();
+    if (error) throw new Error(error.message);
+    if (!row) throw new Error("Transaction not found");
+    const isMove = data.classification === "transfer" || data.classification === "internal";
+    const { error: e } = await supabase
+      .from("transactions")
+      .update({
+        classification: data.classification,
+        classification_source: "user",
+        review_status: "confirmed",
+        duplicate_of: null,
+        counterpart_account_id: isMove
+          ? (data.counterpart_account_id ?? (data.classification === "internal" ? row.account_id : null))
+          : null,
+        link_id: isMove ? row.link_id : null,
+        reasons: ["You set this classification"],
+      })
+      .eq("id", data.id)
+      .eq("user_id", userId);
+    if (e) throw new Error(e.message);
+    // Unlinking one side: ask about the partner rather than guessing.
+    if (row.link_id && !isMove) {
+      await supabase
+        .from("transactions")
+        .update({
+          link_id: null,
+          review_status: "needs_review",
+          reasons: ["Its matching transaction was changed — please check this one too"],
+        })
+        .eq("user_id", userId)
+        .eq("link_id", row.link_id)
+        .neq("id", data.id);
+    }
+    return { ok: true };
+  });
