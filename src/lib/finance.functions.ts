@@ -9,6 +9,14 @@ import {
   type BillKind,
   type Cadence,
 } from "@/lib/bills";
+import {
+  compareScores,
+  computeScore,
+  type AccountType,
+  type ScoreChange,
+  type ScoreInputs,
+  type ScoreResult,
+} from "@/lib/spenny-score";
 
 /* ---------------------------------- types --------------------------------- */
 
@@ -1137,10 +1145,16 @@ export const listBills = createServerFn({ method: "GET" })
     ]);
     if (error) throw new Error(error.message);
     if (payError) throw new Error(payError.message);
+    return buildBillRows(bills ?? [], payments ?? []);
+  });
 
+function buildBillRows(
+  bills: unknown[],
+  payments: { bill_id: string; period: string; paid_on: string }[],
+): BillRow[] {
     const paidByBill = new Map<string, Set<string>>();
     const lastPaid = new Map<string, string>();
-    for (const p of payments ?? []) {
+    for (const p of payments) {
       const set = paidByBill.get(p.bill_id) ?? new Set<string>();
       set.add(p.period);
       paidByBill.set(p.bill_id, set);
@@ -1151,7 +1165,7 @@ export const listBills = createServerFn({ method: "GET" })
     const today = utcTodayISO();
     const monthStartISO = today.slice(0, 7) + "-01";
 
-    return (bills ?? []).map((r) => {
+    return bills.map((r) => {
       const row = r as Record<string, unknown>;
       const id = row["id"] as string;
       const cadence = row["cadence"] as Cadence;
@@ -1209,7 +1223,7 @@ export const listBills = createServerFn({ method: "GET" })
         monthly_cost_pence: monthlyCostPence(amount, cadence),
       } satisfies BillRow;
     });
-  });
+}
 
 export const saveBill = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
@@ -1368,4 +1382,170 @@ export const unmarkBillPaid = createServerFn({ method: "POST" })
       .eq("user_id", userId);
     if (error) throw new Error(error.message);
     return { ok: true };
+  });
+
+/* ------------------------------- Spenny Score ------------------------------ */
+
+export type SpennyScoreData = {
+  current: ScoreResult;
+  previousScore: number | null;
+  change: ScoreChange | null;
+  previousMonth: string;
+};
+
+const SCORE_ACCOUNT_TYPES: AccountType[] = ["current", "savings", "credit_card", "loan", "investment", "other"];
+function asAccountType(t: string | undefined): AccountType | null {
+  return t && (SCORE_ACCOUNT_TYPES as string[]).includes(t) ? (t as AccountType) : null;
+}
+
+function utcMonthStart(offset: number): string {
+  const n = new Date();
+  return new Date(Date.UTC(n.getUTCFullYear(), n.getUTCMonth() + offset, 1)).toISOString().slice(0, 10);
+}
+
+export const getSpennyScore = createServerFn({ method: "GET" })
+  .middleware([requireSupabaseAuth])
+  .handler(async ({ context }): Promise<SpennyScoreData> => {
+    const { supabase, userId } = context;
+    const today = utcTodayISO();
+    const curStart = utcMonthStart(0);
+    const prevStart = utcMonthStart(-1);
+    const histStart = utcMonthStart(-4);
+    const prevEnd = new Date(Date.parse(curStart + "T00:00:00Z") - 86400000).toISOString().slice(0, 10);
+    const daysInMonth = new Date(Date.UTC(Number(today.slice(0, 4)), Number(today.slice(5, 7)), 0)).getUTCDate();
+
+    const [acc, tx, bp, bl, bud, gl, gc, dt, dp, tr] = await Promise.all([
+      supabase.from("accounts").select("id, type, balance_pence, archived").eq("user_id", userId),
+      supabase.from("transactions").select("id, account_id, category_id, type, amount_pence, date").eq("user_id", userId).gte("date", histStart),
+      supabase.from("bill_payments").select("bill_id, period, paid_on, transaction_id").eq("user_id", userId),
+      supabase.from("bills").select("id, name, kind, amount_pence, cadence, due_day, account_id, category_id, note, active, created_at, accounts(name), categories(name)").eq("user_id", userId),
+      supabase.from("budgets").select("category_id, month, limit_pence, categories(name)").eq("user_id", userId).in("month", [curStart, prevStart]),
+      supabase.from("goals").select("id, name, target_pence, target_date, created_at").eq("user_id", userId),
+      supabase.from("goal_contributions").select("goal_id, amount_pence, date").eq("user_id", userId),
+      supabase.from("debts").select("id, name, balance_pence, apr, min_payment_pence, created_at").eq("user_id", userId),
+      supabase.from("debt_payments").select("debt_id, amount_pence, date").eq("user_id", userId).gte("date", prevStart),
+      supabase.from("transfers").select("amount_pence, date, from_account_id, to_account_id, to_debt_id").eq("user_id", userId).gte("date", prevStart),
+    ]);
+    for (const r of [acc, tx, bp, bl, bud, gl, gc, dt, dp, tr]) if (r.error) throw new Error(r.error.message);
+
+    const accounts = (acc.data ?? []).map((a) => ({ id: a.id, type: asAccountType(a.type), balance: Number(a.balance_pence), archived: a.archived }));
+    const accType = new Map(accounts.map((a) => [a.id, a.type]));
+    const accessibleIds = new Set(accounts.filter((a) => a.type === "current" || a.type === "savings").map((a) => a.id));
+    const txs = (tx.data ?? []).map((t) => ({ ...t, amount_pence: Number(t.amount_pence) }));
+    const billTxIds = new Set((bp.data ?? []).map((p) => p.transaction_id).filter((x): x is string => !!x));
+    const billRows = buildBillRows(bl.data ?? [], bp.data ?? []);
+    const paidPeriods = new Set((bp.data ?? []).map((p) => `${p.bill_id}|${p.period}`));
+    const transfers = (tr.data ?? []).map((t) => ({ ...t, amount_pence: Number(t.amount_pence) }));
+    const debtPays = (dp.data ?? []).map((p) => ({ ...p, amount_pence: Number(p.amount_pence) }));
+    const contribs = (gc.data ?? []).map((c) => ({ ...c, amount_pence: Number(c.amount_pence) }));
+
+    const inRange = (d: string, a: string, b: string) => d >= a && d <= b;
+    const dayToDayIn = (a: string, b: string) =>
+      txs.filter((t) => t.type === "expense" && !billTxIds.has(t.id) && inRange(t.date, a, b)).reduce((s, t) => s + t.amount_pence, 0);
+
+    // Typical day-to-day spend: mean of the last 3 full months that had spending.
+    const hist: number[] = [];
+    for (let k = -3; k <= -1; k++) {
+      const a = utcMonthStart(k);
+      const b = new Date(Date.parse(utcMonthStart(k + 1) + "T00:00:00Z") - 86400000).toISOString().slice(0, 10);
+      const v = dayToDayIn(a, b);
+      if (v > 0) hist.push(v);
+    }
+    const curDayToDay = dayToDayIn(curStart, today);
+    const avgDayToDay = hist.length ? Math.round(hist.reduce((s, x) => s + x, 0) / hist.length) : curDayToDay;
+
+    const accessibleNow = accounts.filter((a) => !a.archived && accessibleIds.has(a.id)).reduce((s, a) => s + Math.max(0, a.balance), 0);
+    // Back out this month's movements on accessible accounts to estimate last month's close.
+    let accessibleDelta = 0;
+    for (const t of txs) {
+      if (t.date < curStart || !t.account_id || !accessibleIds.has(t.account_id)) continue;
+      accessibleDelta += t.type === "income" ? t.amount_pence : -t.amount_pence;
+    }
+    for (const t of transfers) {
+      if (t.date < curStart) continue;
+      if (t.from_account_id && accessibleIds.has(t.from_account_id)) accessibleDelta -= t.amount_pence;
+      if (t.to_account_id && accessibleIds.has(t.to_account_id)) accessibleDelta += t.amount_pence;
+    }
+
+    const activeBills = billRows.filter((b) => b.active);
+
+    const build = (a: string, b: string, isCurrent: boolean): ScoreInputs => {
+      const budgets = (bud.data ?? [])
+        .filter((x) => x.month === a)
+        .map((x) => {
+          const cat = (x as Record<string, unknown>)["categories"] as { name: string } | null;
+          return {
+            name: cat?.name ?? "Budget",
+            limitPence: Number(x.limit_pence),
+            spentPence: txs.filter((t) => t.type === "expense" && t.category_id === x.category_id && inRange(t.date, a, b)).reduce((s, t) => s + t.amount_pence, 0),
+          };
+        });
+      const billsThen = activeBills.filter((x) => x.created_at.slice(0, 10) <= b);
+      let overdueBills: { name: string; amountPence: number }[];
+      if (isCurrent) {
+        overdueBills = billsThen.filter((x) => x.status === "overdue").map((x) => ({ name: x.name, amountPence: x.amount_pence }));
+      } else {
+        overdueBills = billsThen
+          .filter((x) => {
+            const due = upcomingDueDates(x.cadence, x.due_day, x.created_at.slice(0, 10), a, 1)[0];
+            return !!due && inRange(due, a, b) && due >= x.created_at.slice(0, 10) && !paidPeriods.has(`${x.id}|${periodKey(x.cadence, due)}`);
+          })
+          .map((x) => ({ name: x.name, amountPence: x.amount_pence }));
+      }
+      return {
+        periodFraction: isCurrent ? Number(today.slice(8, 10)) / daysInMonth : 1,
+        asOf: b,
+        incomePence: txs.filter((t) => t.type === "income" && inRange(t.date, a, b)).reduce((s, t) => s + t.amount_pence, 0),
+        dayToDaySpendingPence: dayToDayIn(a, b),
+        billPaymentsPence: txs.filter((t) => t.type === "expense" && billTxIds.has(t.id) && inRange(t.date, a, b)).reduce((s, t) => s + t.amount_pence, 0),
+        recurringMonthlyPence: billsThen.reduce((s, x) => s + x.monthly_cost_pence, 0),
+        activeBillCount: billsThen.length,
+        overdueBills,
+        budgets,
+        goals: (gl.data ?? [])
+          .filter((g) => g.created_at.slice(0, 10) <= b)
+          .map((g) => ({
+            name: g.name,
+            targetPence: Number(g.target_pence),
+            savedPence: contribs.filter((c) => c.goal_id === g.id && c.date <= b).reduce((s, c) => s + c.amount_pence, 0),
+            createdAt: g.created_at.slice(0, 10),
+            targetDate: g.target_date,
+          })),
+        goalContributions: contribs.filter((c) => inRange(c.date, a, b)).map((c) => ({ amountPence: c.amount_pence, date: c.date })),
+        debts: (dt.data ?? [])
+          .filter((d) => d.created_at.slice(0, 10) <= b)
+          .map((d) => {
+            const paidLater = isCurrent ? 0 : debtPays.filter((p) => p.debt_id === d.id && p.date > b).reduce((s, p) => s + p.amount_pence, 0);
+            return {
+              name: d.name,
+              balancePence: Number(d.balance_pence) + paidLater,
+              apr: Number(d.apr),
+              minPaymentPence: Number(d.min_payment_pence),
+              paidPence: debtPays.filter((p) => p.debt_id === d.id && inRange(p.date, a, b)).reduce((s, p) => s + p.amount_pence, 0),
+            };
+          }),
+        transfers: transfers
+          .filter((t) => inRange(t.date, a, b))
+          .map((t) => ({
+            amountPence: t.amount_pence,
+            date: t.date,
+            fromType: t.from_account_id ? (accType.get(t.from_account_id) ?? null) : null,
+            toType: t.to_account_id ? (accType.get(t.to_account_id) ?? null) : null,
+            toDebt: !!t.to_debt_id,
+          })),
+        accessibleSavingsPence: isCurrent ? accessibleNow : Math.max(0, accessibleNow - accessibleDelta),
+        avgDayToDaySpendingPence: avgDayToDay,
+      };
+    };
+
+    const current = computeScore(build(curStart, today, true));
+    const prevHasData =
+      txs.some((t) => inRange(t.date, prevStart, prevEnd)) || transfers.some((t) => inRange(t.date, prevStart, prevEnd));
+    const previous = prevHasData ? computeScore(build(prevStart, prevEnd, false)) : null;
+    return {
+      current,
+      previousScore: previous ? previous.score : null,
+      change: compareScores(current, previous),
+      previousMonth: prevStart,
+    };
   });

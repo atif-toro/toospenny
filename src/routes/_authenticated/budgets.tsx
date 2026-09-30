@@ -71,6 +71,7 @@ function BudgetsPage() {
   const invalidate = () => {
     queryClient.invalidateQueries({ queryKey: ["budgets"] });
     queryClient.invalidateQueries({ queryKey: ["dashboard"] });
+    queryClient.invalidateQueries({ queryKey: ["spenny-score"] });
   };
 
   const save = useMutation({
