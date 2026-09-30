@@ -37,7 +37,7 @@ import {
   type AccountRow,
   type CategoryRow,
 } from "@/lib/finance.functions";
-import { scanStatement } from "@/lib/statement-scan.functions";
+import { parsePdfStatement } from "@/lib/pdf-statement";
 import { formatDate, formatPence } from "@/lib/money";
 
 type ReviewRow = ParsedRow & {
