@@ -69,6 +69,8 @@ const WEAK_INTERNAL = /^(deposit|withdrawal)\b/i;
 const TOPUP = /\btop-?up\b|\btopped up\b/i;
 const TRANSFER_WORDS =
   /\btransfer|\bfaster payments?\b|\bopen banking\b|\bstanding order\b|\bbank transfer\b|\bmoved\b|^transaction$|\bfps\b|\bown account\b|\bsaving|\bcard payment\b(?=.*\b(amex|american express|capital one|barclaycard)\b)/i;
+const PERSONAL = /\bp2p\b|^to [a-z]+ [a-z]+/i;
+const VAGUE = /^(transaction|unknown description)$/i;
 const PAYROLL = /\b(salary|payroll|wages|pay run|bacs|automated credit|net pay|employer)\b/i;
 const BANK_NAMES = /\b(monzo|revolut|natwest|lloyds|halifax|barclays|hsbc|santander|nationwide|starling|chase|tsb|amex|american express|capital one)\b/gi;
 
@@ -129,11 +131,13 @@ export function scoreTransferPair(out: RecTx, inn: RecTx): { score: number; reas
     score += 5;
     reasons.push(`Both sides happened ${days} days apart`);
   }
-  const words = `${out.note} ${inn.note}`;
-  if (TOPUP.test(words) || TRANSFER_WORDS.test(out.note) || TRANSFER_WORDS.test(inn.note)) {
-    score += 20;
+  const outWords = TOPUP.test(out.note) || TRANSFER_WORDS.test(out.note);
+  const inWords = TOPUP.test(inn.note) || TRANSFER_WORDS.test(inn.note);
+  if (outWords || inWords) {
+    score += (outWords ? 10 : 0) + (inWords ? 10 : 0);
     reasons.push("Description indicates a bank transfer or top-up");
   }
+  if (PERSONAL.test(out.note) || PERSONAL.test(inn.note)) score -= 10;
   if (mentionsAccount(out.note, inn.accountName) || mentionsAccount(inn.note, out.accountName)) {
     score += 15;
     reasons.push("Description mentions your other account");
@@ -337,6 +341,19 @@ export function reconcile(all: RecTx[]): RecResult[] {
     });
   }
 
+  // Blank bank descriptions with no match — ask rather than guess.
+  for (const t of open) {
+    if (taken.has(t.id) || !VAGUE.test(t.note.trim())) continue;
+    const r = get(t.id);
+    if (r.suggestion) continue;
+    Object.assign(r, {
+      confidence: "low",
+      needsReview: true,
+      reasons: ["The bank gave no description, so this could be a transfer between your accounts"],
+      suggestion: { classification: "transfer", confidence: "low", kind: "transfer" },
+    });
+  }
+
   // 5. Possible duplicates (same account, direction, amount, close date, similar payer).
   const counted = open.filter((t) => {
     const c = get(t.id).classification;
@@ -386,7 +403,9 @@ export function reconcile(all: RecTx[]): RecResult[] {
         .filter((g) => Math.abs(g.amountPence - t.amountPence) <= t.amountPence * REC_CONFIG.salaryAmountTolerance)
         .map((g) => g.date.slice(0, 7)),
     );
-    const recurring = months.size >= 2 && t.amountPence >= 50000;
+    const similar = group.filter((g) => Math.abs(g.amountPence - t.amountPence) <= t.amountPence * REC_CONFIG.salaryAmountTolerance);
+    const onePerMonth = similar.length === months.size;
+    const recurring = months.size >= 2 && onePerMonth && t.amountPence >= 50000 && !PERSONAL.test(t.note) && !/faster payments/i.test(t.note);
     const payroll = PAYROLL.test(t.note) && t.amountPence >= 50000;
     if (!recurring && !payroll) continue;
     const r = get(t.id);
