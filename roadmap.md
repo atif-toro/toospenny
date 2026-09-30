@@ -8,3 +8,4 @@
 - [x] Bills & subscriptions tracker (recurring bills, mark paid, dashboard card)
 - [ ] Fix Google consent screen showing old app name "MoneyMap" — rename to Spenny
 - [x] Bank statement CSV import (Monzo, Revolut, NatWest, Lloyds, Halifax, Amex, Capital One + auto-detect)
+- [x] Scan PDF / photo statements with AI into the import review table
