@@ -37,6 +37,7 @@ import {
   type AccountRow,
   type CategoryRow,
 } from "@/lib/finance.functions";
+import { scanStatement } from "@/lib/statement-scan.functions";
 import { formatDate, formatPence } from "@/lib/money";
 
 type ReviewRow = ParsedRow & {
@@ -77,42 +78,43 @@ export function ImportStatementDialog({
     if (fileRef.current) fileRef.current.value = "";
   };
 
+  const applyRows = async (parsed: ParsedRow[], targetAccount: string) => {
+    if (parsed.length === 0) {
+      setRows([]);
+      toast.error("No transactions found in that file");
+      return;
+    }
+    const dates = parsed.map((r) => r.date).sort();
+    let existingKeys = new Set<string>();
+    if (targetAccount) {
+      const existing = await listExistingForImport({
+        data: { accountId: targetAccount, from: dates[0]!, to: dates[dates.length - 1]! },
+      });
+      existingKeys = new Set(
+        existing.map((e) => dedupeKey(e.date, e.amount_pence, e.type, e.note ?? "")),
+      );
+    }
+    setRows(
+      parsed.map((r, i) => {
+        const duplicate = existingKeys.has(dedupeKey(r.date, r.amountPence, r.type, r.description));
+        return {
+          ...r,
+          id: i,
+          duplicate,
+          selected: !duplicate,
+          categoryName: guessCategory(r.description, r.type),
+        };
+      }),
+    );
+  };
+
   const buildRows = async (text: string, targetAccount: string, bankChoice: BankId | "auto") => {
     setParsing(true);
     try {
       const result = parseStatement(text, bankChoice === "auto" ? undefined : presetById(bankChoice));
       setDetected(result.preset.label);
       setSkipped(result.skipped);
-
-      if (result.rows.length === 0) {
-        setRows([]);
-        toast.error("No transactions found in that file");
-        return;
-      }
-
-      const dates = result.rows.map((r) => r.date).sort();
-      let existingKeys = new Set<string>();
-      if (targetAccount) {
-        const existing = await listExistingForImport({
-          data: { accountId: targetAccount, from: dates[0]!, to: dates[dates.length - 1]! },
-        });
-        existingKeys = new Set(
-          existing.map((e) => dedupeKey(e.date, e.amount_pence, e.type, e.note ?? "")),
-        );
-      }
-
-      setRows(
-        result.rows.map((r, i) => {
-          const duplicate = existingKeys.has(dedupeKey(r.date, r.amountPence, r.type, r.description));
-          return {
-            ...r,
-            id: i,
-            duplicate,
-            selected: !duplicate,
-            categoryName: guessCategory(r.description, r.type),
-          };
-        }),
-      );
+      await applyRows(result.rows, targetAccount);
     } catch (e) {
       toast.error(e instanceof Error ? e.message : "Could not read that file");
     } finally {
@@ -122,15 +124,49 @@ export function ImportStatementDialog({
 
   const onFile = async (file: File | undefined) => {
     if (!file) return;
-    const text = await file.text();
     setFileName(file.name);
+    const mime = file.type || (file.name.toLowerCase().endsWith(".pdf") ? "application/pdf" : "");
+    if (mime === "application/pdf" || mime.startsWith("image/")) {
+      await scanFile(file, mime);
+      return;
+    }
+    const text = await file.text();
     setFileText(text);
     await buildRows(text, accountId, bank);
+  };
+
+  const scanFile = async (file: File, mime: string) => {
+    if (!["application/pdf", "image/png", "image/jpeg", "image/webp"].includes(mime)) {
+      toast.error("Please use a PDF, JPG, PNG or WEBP. iPhone HEIC photos need converting to JPG first.");
+      return;
+    }
+    if (file.size > 10 * 1024 * 1024) {
+      toast.error("That file is over 10MB — try a smaller one.");
+      return;
+    }
+    setParsing(true);
+    setFileText("");
+    try {
+      const buf = new Uint8Array(await file.arrayBuffer());
+      let bin = "";
+      for (let i = 0; i < buf.length; i += 0x8000) bin += String.fromCharCode(...buf.subarray(i, i + 0x8000));
+      const res = await scanStatement({
+        data: { fileName: file.name, mimeType: mime as "application/pdf", base64: btoa(bin) },
+      });
+      setDetected(res.bank ? `Scanned · ${res.bank}` : "Scanned statement");
+      setSkipped(0);
+      await applyRows(res.rows, accountId);
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : "Could not read that file");
+    } finally {
+      setParsing(false);
+    }
   };
 
   const onAccountChange = async (value: string) => {
     setAccountId(value);
     if (fileText) await buildRows(fileText, value, bank);
+    else if (rows.length) await applyRows(rows.map(({ date, description, amountPence, type }) => ({ date, description, amountPence, type })), value);
   };
 
   const onBankChange = async (value: BankId | "auto") => {
@@ -206,7 +242,7 @@ export function ImportStatementDialog({
         <DialogHeader>
           <DialogTitle>Import a bank statement</DialogTitle>
           <DialogDescription>
-            Upload a CSV from your bank, check the rows, then add them to Too Spenny.
+            Upload a CSV, PDF or photo of your statement, check the rows, then add them to Too Spenny.
           </DialogDescription>
         </DialogHeader>
 
@@ -246,16 +282,16 @@ export function ImportStatementDialog({
         </div>
 
         <div className="space-y-2">
-          <Label>Statement file (CSV)</Label>
+          <Label>Statement file (CSV, PDF or photo)</Label>
           <div className="flex items-center gap-3 rounded-lg border border-dashed p-4">
             <Upload className="h-5 w-5 text-muted-foreground" />
             <div className="flex-1 text-sm text-muted-foreground">
-              {fileName || "Choose the CSV you downloaded from your bank"}
+              {fileName || "Upload a CSV, PDF statement or a clear photo of it"}
             </div>
             <input
               ref={fileRef}
               type="file"
-              accept=".csv,text/csv"
+              accept=".csv,text/csv,application/pdf,image/png,image/jpeg,image/webp"
               className="hidden"
               onChange={(e) => void onFile(e.target.files?.[0])}
             />
@@ -267,7 +303,7 @@ export function ImportStatementDialog({
 
         {parsing ? (
           <div className="flex items-center gap-2 py-6 text-sm text-muted-foreground">
-            <Loader2 className="h-4 w-4 animate-spin" /> Reading your statement…
+            <Loader2 className="h-4 w-4 animate-spin" /> Reading your statement… (photos and PDFs can take up to a minute)
           </div>
         ) : rows.length > 0 ? (
           <>
