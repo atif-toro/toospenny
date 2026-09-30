@@ -52,7 +52,7 @@ export type TransactionRow = {
 };
 
 const TX_SELECT =
-  "id, account_id, category_id, type, amount_pence, date, note, classification, classification_source, review_status, confidence, reasons, link_id, counterpart_account_id, duplicate_of, categories(name), accounts(name)";
+  "id, account_id, category_id, type, amount_pence, date, note, classification, classification_source, review_status, confidence, reasons, link_id, counterpart_account_id, duplicate_of, categories(name), accounts!transactions_account_id_fkey(name)";
 
 function mapTx(r: unknown): TransactionRow {
   const row = r as Record<string, unknown>;
@@ -1597,7 +1597,7 @@ async function loadAllTransactions(supabase: { from: (t: string) => any }, userI
   for (let from = 0; ; from += 1000) {
     const { data, error } = await supabase
       .from("transactions")
-      .select(`${TX_SELECT}, suggestion, accounts(name, type)`.replace(", accounts(name)", ""))
+      .select(TX_SELECT.replace("accounts!transactions_account_id_fkey(name)", "accounts!transactions_account_id_fkey(name, type)") + ", suggestion")
       .eq("user_id", userId)
       .order("id")
       .range(from, from + 999);
@@ -1691,7 +1691,7 @@ export const listReviewItems = createServerFn({ method: "GET" })
     if (ids.length) {
       const { data: others, error: oErr } = await supabase
         .from("transactions")
-        .select("id, note, date, accounts(name)")
+        .select("id, note, date, accounts!transactions_account_id_fkey(name)")
         .eq("user_id", userId)
         .in("id", ids);
       if (oErr) throw new Error(oErr.message);
