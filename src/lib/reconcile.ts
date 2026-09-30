@@ -410,10 +410,10 @@ export type RecSummary = {
   needsReview: number;
 };
 
-export function summarise(txs: { amountPence: number; direction: "in" | "out" }[], res: RecResult[]): RecSummary {
+export function summarise(txs: RecTx[], res: RecResult[]): RecSummary {
   const byId = new Map(res.map((r) => [r.id, r]));
   const s: RecSummary = { incomePence: 0, expensePence: 0, transferPence: 0, internalPence: 0, excludedPence: 0, needsReview: 0 };
-  (txs as (RecTx)[]).forEach((t) => {
+  txs.forEach((t) => {
     const r = byId.get(t.id);
     if (!r) return;
     if (r.needsReview) s.needsReview++;
