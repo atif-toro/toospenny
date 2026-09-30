@@ -760,7 +760,7 @@ export function computeScore(i: ScoreInputs): ScoreResult {
 
 export type ScoreChange = {
   delta: number;
-  contributions: { id: ComponentId; label: string; change: number }[];
+  contributions: { id: ComponentId; label: string; change: number; note: string | null }[];
 };
 
 /** Change in score and how much each area contributed to it. */
@@ -772,7 +772,8 @@ export function compareScores(current: ScoreResult, previous: ScoreResult | null
       const p = prevById.get(c.id);
       const before = p ? p.raw * p.effectiveWeight : 0;
       const after = c.raw * c.effectiveWeight;
-      return { id: c.id, label: c.label, change: Math.round((after - before) * 10) / 10 };
+      const note = p?.counted && !c.counted ? "not counted this month" : !p?.counted && c.counted ? "newly counted" : null;
+      return { id: c.id, label: c.label, change: Math.round((after - before) * 10) / 10, note };
     })
     .filter((c) => Math.abs(c.change) >= 0.5)
     .sort((a, b) => Math.abs(b.change) - Math.abs(a.change));

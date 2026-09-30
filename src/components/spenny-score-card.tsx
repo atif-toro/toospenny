@@ -177,7 +177,10 @@ function ScoreSheet({ open, onOpenChange, data }: { open: boolean; onOpenChange:
                 <ul className="grid grid-cols-2 gap-2">
                   {change.contributions.map((c) => (
                     <li key={c.id} className="flex items-center justify-between rounded-lg border bg-background px-3 py-2 text-sm">
-                      <span className="truncate">{c.label}</span>
+                      <span className="min-w-0">
+                        <span className="block truncate">{c.label}</span>
+                        {c.note && <span className="block truncate text-[11px] text-muted-foreground">{c.note}</span>}
+                      </span>
                       <span className={cn("flex items-center gap-0.5 font-semibold tabular-nums", c.change > 0 ? "text-success" : "text-destructive")}>
                         {c.change > 0 ? <ArrowUp className="h-3.5 w-3.5" /> : <ArrowDown className="h-3.5 w-3.5" />}
                         {c.change > 0 ? "+" : "−"}
