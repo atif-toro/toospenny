@@ -1,57 +1,78 @@
-# Spenny Score — 0-100 financial health score
+# Spenny Score: a dashboard health score
 
-A clear, explainable score built from your own data. Every point can be traced to one of eight parts, so you can always see why the score is what it is.
+A compact score from 0 to 100 on the dashboard that shows your financial progress and what to work on next. It has no separate page and no menu item.
 
-## How the score works
+## Dashboard card
 
-The score is made of eight parts. Each part scores 0-100, then gets a fixed weight. The overall score is the weighted total, rounded.
+It sits near the top of the dashboard, above the existing stat cards:
 
-| Part | Weight | What gets 100 | What gets 0 |
-|---|---|---|---|
-| Spending vs income | 15 | Spending is 70% of income or less | Spending is 110% of income or more |
-| Cash flow | 15 | This month's leftover is 20%+ of income | Leftover is -10% of income or worse |
-| Savings rate | 15 | 20%+ of income goes to savings/goals | Nothing saved |
-| Budget adherence | 10 | Every budget at or under its limit | Every budget 50%+ over |
-| Goal progress | 10 | Every goal on track for its date | No progress on any goal |
-| Debt load | 15 | No debt, or debt under 10% of yearly income | Debt of 100%+ of yearly income |
-| Debt payments | 10 | Paid at least the minimum on every debt this month | No payments made |
-| Bills and recurring costs | 10 | No overdue outgoings, recurring costs 50% of income or less | Overdue outgoings and recurring costs 80%+ of income |
+```text
+Spenny Score
+76   ↑ 6 since last month
+Good. You're improving this month.
+Helping: Spending    Hurting: Debt
+                         View details →
+```
 
-Between the two ends, points go up in a straight line. If a part doesn't apply to you (for example no budgets or no goals yet), it is left out and the other weights are scaled to fill the gap, so you aren't penalised for features you haven't used. It is marked "Not counted yet" along with a tip to set it up.
+- A small score ring in the Too Spenny green/cream style
+- The change since last month is prominent (green for up, muted for down)
+- On mobile it's one short card with the ring on the left and the text on the right, so the rest of the dashboard stays close by
+- Nothing else on the dashboard is redesigned
 
-Bands: 80-100 Excellent, 65-79 Good, 50-64 Fair, 35-49 Needs work, 0-34 Struggling.
+## View details panel
 
-**Change since last month:** we work out the same score using last month's figures and show the difference, e.g. "+6 since August".
+Tapping "View details" opens a panel on top of the dashboard. On desktop it's a side panel, and on mobile it slides up from the bottom. Closing it takes you straight back.
 
-**What's helping / what's hurting:** each part's pull on the score is its weight times how far it sits above or below the middle (50). The 3 biggest positive pulls are shown as "Helping" and the 3 biggest negative pulls as "Hurting", each with a plain sentence such as "You spent 64% of your income — well under target".
+1. Overall score and band
+2. Change since last month, plus which parts moved it most (e.g. "Spending +4, Debt -1")
+3. Component breakdown: 8 rows showing score, weight, a bar and the real numbers behind each. Parts that can't be worked out yet say "Not counted yet" with a setup tip
+4. Helping: the top 3 factors
+5. Hurting: the top 3 factors
+6. Recommended actions: up to 3, each with an "estimated +X pts" label
+7. How it's calculated: an expandable section that explains the weights and rules in plain language
 
-**Actions:** each part that is hurting you comes with a specific next step and roughly how many points it could add, e.g. "Pay £40 more toward Amex this month (+4 pts)" or "Your Eating out budget is £55 over — pause it for the rest of the month".
+The wording stays supportive throughout. This isn't a credit score or a judgement.
 
-## What you'll see
+## Scoring model
 
-**On the dashboard** (one small card, placed above the existing stats):
-- A score ring with the number, its band, and the change since last month
-- One "top helper" and one "top drag"
-- A "See breakdown" link
+Each part scores 0-100. The overall score is the weighted average of the parts that can be counted.
 
-On phones it's a single compact row, so the rest of the dashboard doesn't move far down.
+| Part | Weight | What it measures |
+|---|---|---|
+| Spending vs income | 15% | Day-to-day spending (excluding debt payments and bills) as a share of income |
+| Cash flow | 15% | Money left after everything, as a share of income. Checks whether you finish the month ahead |
+| Savings | 15% | Share of income moved into savings, investments and goals this month |
+| Budget adherence | 10% | Spent vs limit across budgets, weighted by budget size, so one small overspend has little effect |
+| Goal progress | 10% | Average progress vs expected pace across active goals, weighted by target size, with each goal capped. One lagging small goal can't drag the score down. It's ready for a "primary goal" flag later |
+| Debt | 15% | Debt burden and repayment health (see below) |
+| Bills and recurring costs | 10% | Recurring bills and subscriptions as a share of income, plus whether any are overdue. **Excludes debt payments** |
+| Financial buffer | 10% | Easy-to-reach savings (current and savings accounts) divided by essential monthly costs. 3+ months scores 100 and 0 months scores 0 |
 
-**New "Spenny Score" page** (added to the side menu):
-1. A large score ring with its band and the change since last month
-2. Eight part cards, each with its score, its weight, a progress bar and the actual numbers behind it
-3. "Helping your score": top 3
-4. "Hurting your score": top 3
-5. "How to improve": a list of actions ranked by points gained
-6. A short "How the score is calculated" section that opens to show the table above
+**Avoiding double-counting:** debt repayments only count toward Debt. Bills leaves them out and Spending leaves out both. Spending measures habits and Cash flow measures the overall result.
 
-It uses the same Too Spenny green/cream style, Outfit/Figtree fonts and card layout, and stacks into one column on mobile.
+**Debt score** (a blend of four measures):
+- Debt compared with yearly income (40%)
+- Required monthly payments as a share of income (25%)
+- Whether minimum payments were made this month (25%)
+- Interest burden, based on the balance-weighted rate (10%, only counted if rates are entered)
+
+Manageable, low-interest debt that's being paid on time can still score highly. Having no debt counts as good, but it isn't the only way to reach the top score.
+
+**Missing data:** if a part can't be worked out (no income logged, no budgets, no goals, no debts entered, no bills), it's left out and the other weights are scaled up to fill the gap. Its row says "Not counted yet" and offers a helpful tip. You're never marked down for a feature you haven't used.
+
+**Bands:** 80-100 Excellent · 65-79 Good · 50-64 Fair · 35-49 Needs attention · 0-34 Needs significant attention. Each band comes with one supportive sentence, adjusted for whether your score went up or down.
+
+**Change since last month:** the same calculation runs on last month's data. The difference is shown along with each part's contribution to it.
+
+**Helping / hurting:** each part's pull is its (reweighted) weight times its distance from 50. The biggest positive pulls count as helping and the biggest negative pulls as hurting.
+
+**Actions:** these are generated from the parts that are hurting you, using realistic amounts (e.g. cut a category by up to 25% of its overspend, suggest £10-£50 more toward a debt, or add a savings amount under 10% of income). They're sorted by estimated gain and capped at 3, with a label like "Estimated +3 pts".
 
 ## Technical details
 
-- `src/lib/spenny-score.ts`: a pure, unit-tested scoring module. It takes a `ScoreInputs` snapshot (income, expenses, savings/goal contributions, budgets with spent amounts, goals with target/date/progress, debts with balance/min/payments, bills with status/amount/frequency) and returns `{ score, band, components[], helping[3], hurting[3], actions[] }`. Weights and thresholds sit in one config object. Unused parts are re-weighted.
-- `getSpennyScore` server function in `finance.functions.ts` (using `requireSupabaseAuth`) builds inputs for the current and previous month from existing tables and returns both results plus the change. No new tables or migrations.
-- Monthly recurring cost = the monthly equivalent of each active bill (based on its frequency) plus the minimum payments on debts.
-- Savings = transfers into savings/investment accounts plus goal contributions for the month.
-- `src/components/spenny-score.tsx`: score ring (SVG, colours from tokens), compact dashboard card, and full breakdown pieces.
-- New route `src/routes/_authenticated/score.tsx` with head metadata and a loader/suspense query. Nav item added in `app-layout.tsx`. Dashboard card loads via its own `useQuery`, so the dashboard isn't slowed down.
-- Vitest tests cover the thresholds, re-weighting and top-3 ordering.
+- `src/lib/spenny-score.ts`: a pure module. The `SCORE_CONFIG` object holds all weights, thresholds and debt sub-weights. `computeScore(inputs)` returns components, the score, the band, helping/hurting and actions. `compareScores(current, previous)` returns the change and each part's contribution to it.
+- `src/lib/spenny-score.test.ts` (vitest) tests thresholds and interpolation, missing-part exclusion and reweighting, score movement, debt scoring (no debt, manageable debt, missed minimums, missing rates), goal weighting and capping, and helping/hurting order.
+- A `getSpennyScore` server function in `finance.functions.ts` (`requireSupabaseAuth`) builds inputs for this month and last month from the existing accounts, transactions, transfers, budgets, goals, goal contributions, debts, debt payments and bills. There are no new tables.
+- `src/components/spenny-score-card.tsx` holds the compact card plus a details panel that uses shadcn `Sheet` (side on desktop, bottom on mobile via `useIsMobile`) and semantic tokens only.
+- The card is added to `dashboard.tsx` with its own `useQuery`, so the dashboard's loading isn't slowed. There are no route or nav changes.
+- roadmap.md gets a Spenny Score task.
