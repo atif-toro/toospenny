@@ -383,9 +383,11 @@ function scoreBudgets(i: ScoreInputs): Partial {
 export function cappedShares(weights: number[], cap: number): number[] {
   const n = weights.length;
   if (n === 0) return [];
-  const effCap = Math.max(cap, 1 / n);
   const total = weights.reduce((s, x) => s + Math.max(0, x), 0);
   let shares = weights.map((x) => (total > 0 ? Math.max(0, x) / total : 1 / n));
+  // A cap is only meaningful when it can be satisfied (n × cap ≥ 1).
+  if (n * cap < 1) return shares;
+  const effCap = cap;
   for (let iter = 0; iter < n; iter++) {
     const capped = shares.map((s) => s >= effCap - 1e-12);
     const excess = shares.reduce((s, x) => s + Math.max(0, x - effCap), 0);

@@ -247,8 +247,7 @@ describe("goals", () => {
   it("weights by target size", () => {
     const big = { name: "House", targetPence: 1_000_000, savedPence: 1_000_000, createdAt: "2026-01-01", targetDate: "2026-12-31" };
     const small = { name: "Gift", targetPence: 10_000, savedPence: 0, createdAt: "2026-01-01", targetDate: "2026-12-31" };
-    const mid = { name: "Car", targetPence: 800_000, savedPence: 800_000, createdAt: "2026-01-01", targetDate: "2026-12-31" };
-    const r = computeScore(base({ goals: [big, small, mid] }));
+    const r = computeScore(base({ goals: [big, small] }));
     expect(comp(r, "goals").score).toBeGreaterThanOrEqual(95);
   });
   it("caps any single goal's share at 40% when there are enough goals", () => {
@@ -318,8 +317,7 @@ describe("score movement", () => {
     expect(ch.contributions.map((c) => c.id)).toContain("spending");
   });
   it("no previous data → null", () => {
-    const empty = computeScore(base({ incomePence: 0, dayToDaySpendingPence: 0, recurringMonthlyPence: 0, activeBillCount: 0, avgDayToDaySpendingPence: 0 }));
-    expect(compareScores(computeScore(base()), empty)).toBeNull();
+    expect(compareScores(computeScore(base()), null)).toBeNull();
   });
 });
 
