@@ -40,7 +40,7 @@ async function loadPdfjs() {
 /** Pull visual text lines out of every page, in reading order. */
 export async function extractPdfLines(data: ArrayBuffer): Promise<{ lines: string[]; pages: number }> {
   const pdfjs = await loadPdfjs();
-  const doc = await pdfjs.getDocument({ data: new Uint8Array(data), isEvalSupported: false }).promise;
+  const doc = await pdfjs.getDocument({ data: new Uint8Array(data) }).promise;
   const lines: string[] = [];
   for (let p = 1; p <= doc.numPages; p++) {
     const page = await doc.getPage(p);
@@ -57,7 +57,7 @@ export async function extractPdfLines(data: ArrayBuffer): Promise<{ lines: strin
     buckets.sort((a, b) => b.y - a.y);
     for (const b of buckets) lines.push(b.text.replace(/\s+/g, " ").trim());
   }
-  await doc.destroy();
+  doc.cleanup();
   return { lines, pages: doc.numPages };
 }
 
