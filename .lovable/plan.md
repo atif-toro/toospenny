@@ -47,7 +47,7 @@ The wording changes a little depending on whether your score went up or down (fo
 | Area | Weight | Measures |
 |---|---|---|
 | Spending vs income | 15% | Day-to-day spending (excluding bills and debt payments) as a share of income |
-| Cash flow | 15% | Overall result: income minus everything that went out, as a share of income |
+| Cash flow | 15% | Underlying surplus: income − day-to-day spending − bills − debt payments, as a share of income |
 | Savings | 15% | Share of income moved into savings, investments and goals |
 | Budget adherence | 10% | Spent vs limit, weighted by budget size, so a small overspend barely matters |
 | Goal progress | 10% | Progress vs expected pace, weighted by target size, with each goal's influence capped |
@@ -55,7 +55,9 @@ The wording changes a little depending on whether your score went up or down (fo
 | Bills and recurring costs | 10% | Recurring bills/subscriptions as a share of income, plus any overdue ones. Excludes debt payments |
 | Financial buffer | 10% | Months of essential costs your accessible savings could cover |
 
-**No double-counting:** debt payments only count toward Debt, and Spending leaves out both bills and debt payments.
+**No double-counting:** Spending leaves out bills and debt payments. Bills leaves out debt payments. Debt handles repayment health.
+
+**Cash flow vs savings:** Cash flow is income − day-to-day spending − bills − debt payments. Money moved between your own accounts (including into Savings or Investment accounts) and goal contributions never lowers Cash flow and is never counted as spending. That money only counts toward Savings. Example: £2,500 income − £1,000 spending − £700 bills − £200 debt = £600 (24%). Moving £300 into savings leaves Cash flow at £600, and Savings shows the £300. Internal moves are identified using the existing transfers records, which are kept separate from income and expense transactions.
 
 **Financial buffer:** this is your accessible savings divided by essential monthly costs. Essential costs are your monthly bills, minimum debt payments and your average day-to-day spending. Accessible savings means the balances of your **Current** and **Savings** accounts only. Investments, loans, credit cards and "other" accounts don't count. 0 months scores 0 and 3+ months scores 100, with a straight line in between. It's shown like this: "2.4 months ██████░░░░ — You could currently cover about 2.4 months of essential expenses." If essential costs are zero, it's marked "Not counted yet".
 
@@ -79,6 +81,7 @@ The thresholds are gentle. Debt under about 30% of yearly income, with payments 
 
 - `src/lib/spenny-score.ts`: a pure module. `SCORE_CONFIG` holds all weights, thresholds, debt sub-weights, goal cap, buffer months, bands and copy. `computeScore(inputs)` returns components (score, weight, effective weight, metrics, status: counted or not counted, with a tip), the score, band, areas counted, helping, needsAttention and actions with a `{min,max}` impact. `compareScores(current, previous)` returns the change and each area's contribution to it. All divisions are guarded, and the output is clamped and rounded so no NaN or Infinity can reach the UI.
 - `src/lib/spenny-score.test.ts` (vitest) covers band boundaries, interpolation thresholds, score movement, missing areas and reweighting, debt with no rate, manageable debt, missed minimums, goal weighting and capping, buffer maths, current/savings vs investment accounts, helping/needs-attention order, action impact ranges and limited-data messaging. Edge cases: zero income, zero essential costs, no savings, no debt, no goals, no budgets, no bills, negative cash flow, very high income and very high debt.
+- Cash flow and transfer tests: (1) a savings transfer doesn't lower Cash flow; (2) an investment transfer doesn't lower Cash flow; (3) a current-to-savings transfer isn't counted as spending; (4) genuine spending lowers Cash flow; (5) debt payments lower Cash flow but aren't counted as spending; (6) bills lower Cash flow but aren't counted as spending; (7) savings contributions are counted correctly by Savings. The worked £2,500 example is included as a test case.
 - A `getSpennyScore` server function in `finance.functions.ts` (`requireSupabaseAuth`) builds inputs for this month and last month from the existing accounts, transactions, transfers, budgets, goals, goal contributions, debts, debt payments and bills. There are no new tables.
 - `src/components/spenny-score-card.tsx` holds the compact card and the shadcn `Sheet` (`side` switches between right and bottom via `useIsMobile`), styled with semantic tokens only.
 - The card is added to `dashboard.tsx` with its own isolated `useQuery`. There are no route or nav changes. A Spenny Score task is added to roadmap.md.
