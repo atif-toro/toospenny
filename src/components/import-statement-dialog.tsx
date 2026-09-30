@@ -125,9 +125,16 @@ export function ImportStatementDialog({
   const onFile = async (file: File | undefined) => {
     if (!file) return;
     setFileName(file.name);
-    const mime = file.type || (file.name.toLowerCase().endsWith(".pdf") ? "application/pdf" : "");
-    if (mime === "application/pdf" || mime.startsWith("image/")) {
-      await scanFile(file, mime);
+    const name = file.name.toLowerCase();
+    const isPdf = file.type === "application/pdf" || name.endsWith(".pdf");
+    if (file.type.startsWith("image/") || /\.(png|jpe?g|webp|heic)$/.test(name)) {
+      toast.error(
+        "Photos of statements can't be read. Please download the CSV or PDF statement from your banking app.",
+      );
+      return;
+    }
+    if (isPdf) {
+      await readPdf(file);
       return;
     }
     const text = await file.text();
@@ -135,25 +142,23 @@ export function ImportStatementDialog({
     await buildRows(text, accountId, bank);
   };
 
-  const scanFile = async (file: File, mime: string) => {
-    if (!["application/pdf", "image/png", "image/jpeg", "image/webp"].includes(mime)) {
-      toast.error("Please use a PDF, JPG, PNG or WEBP. iPhone HEIC photos need converting to JPG first.");
-      return;
-    }
-    if (file.size > 10 * 1024 * 1024) {
-      toast.error("That file is over 10MB — try a smaller one.");
+  const readPdf = async (file: File) => {
+    if (file.size > 20 * 1024 * 1024) {
+      toast.error("That file is over 20MB — try a shorter statement.");
       return;
     }
     setParsing(true);
     setFileText("");
     try {
-      const buf = new Uint8Array(await file.arrayBuffer());
-      let bin = "";
-      for (let i = 0; i < buf.length; i += 0x8000) bin += String.fromCharCode(...buf.subarray(i, i + 0x8000));
-      const res = await scanStatement({
-        data: { fileName: file.name, mimeType: mime as "application/pdf", base64: btoa(bin) },
-      });
-      setDetected(res.bank ? `Scanned · ${res.bank}` : "Scanned statement");
+      const res = await parsePdfStatement(await file.arrayBuffer());
+      if (res.imageOnly) {
+        setRows([]);
+        toast.error(
+          "That PDF is a scan or photo with no readable text. Please download the CSV or original PDF from your banking app.",
+        );
+        return;
+      }
+      setDetected("PDF statement · read on your device");
       setSkipped(0);
       await applyRows(res.rows, accountId);
     } catch (e) {
