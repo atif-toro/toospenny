@@ -17,6 +17,7 @@ import {
   type ScoreInputs,
   type ScoreResult,
 } from "@/lib/spenny-score";
+import { economicType, reconcile, summarise, type Classification, type RecTx, type RecSummary } from "@/lib/reconcile";
 
 /* ---------------------------------- types --------------------------------- */
 
@@ -40,7 +41,44 @@ export type TransactionRow = {
   note: string | null;
   category_name: string | null;
   account_name: string | null;
+  classification: Classification;
+  classification_source: "auto" | "user";
+  review_status: string;
+  confidence: string | null;
+  reasons: string[];
+  link_id: string | null;
+  counterpart_account_id: string | null;
+  duplicate_of: string | null;
 };
+
+const TX_SELECT =
+  "id, account_id, category_id, type, amount_pence, date, note, classification, classification_source, review_status, confidence, reasons, link_id, counterpart_account_id, duplicate_of, categories(name), accounts!transactions_account_id_fkey(name)";
+
+function mapTx(r: unknown): TransactionRow {
+  const row = r as Record<string, unknown>;
+  const cat = row["categories"] as { name: string } | null;
+  const acc = row["accounts"] as { name: string } | null;
+  const type = row["type"] as "income" | "expense";
+  return {
+    id: row["id"] as string,
+    account_id: row["account_id"] as string | null,
+    category_id: row["category_id"] as string | null,
+    type,
+    amount_pence: Number(row["amount_pence"]),
+    date: row["date"] as string,
+    note: row["note"] as string | null,
+    category_name: cat?.name ?? null,
+    account_name: acc?.name ?? null,
+    classification: economicType({ type, classification: row["classification"] as string | null }),
+    classification_source: (row["classification_source"] as "auto" | "user") ?? "auto",
+    review_status: (row["review_status"] as string) ?? "none",
+    confidence: (row["confidence"] as string | null) ?? null,
+    reasons: Array.isArray(row["reasons"]) ? (row["reasons"] as string[]) : [],
+    link_id: (row["link_id"] as string | null) ?? null,
+    counterpart_account_id: (row["counterpart_account_id"] as string | null) ?? null,
+    duplicate_of: (row["duplicate_of"] as string | null) ?? null,
+  };
+}
 
 export type DebtRow = {
   id: string;
@@ -213,9 +251,7 @@ export const listTransactions = createServerFn({ method: "POST" })
     const { supabase, userId } = context;
     let query = supabase
       .from("transactions")
-      .select(
-        "id, account_id, category_id, type, amount_pence, date, note, categories(name), accounts(name)",
-      )
+      .select(TX_SELECT)
       .eq("user_id", userId)
       .order("date", { ascending: false })
       .order("created_at", { ascending: false });
@@ -236,22 +272,7 @@ export const listTransactions = createServerFn({ method: "POST" })
     const { data: rows, error } = await query.limit(data.limit ?? 200);
     if (error) throw new Error(error.message);
 
-    return (rows ?? []).map((r) => {
-      const row = r as Record<string, unknown>;
-      const cat = row["categories"] as { name: string } | null;
-      const acc = row["accounts"] as { name: string } | null;
-      return {
-        id: row["id"] as string,
-        account_id: row["account_id"] as string | null,
-        category_id: row["category_id"] as string | null,
-        type: row["type"] as "income" | "expense",
-        amount_pence: Number(row["amount_pence"]),
-        date: row["date"] as string,
-        note: row["note"] as string | null,
-        category_name: cat?.name ?? null,
-        account_name: acc?.name ?? null,
-      };
-    }) as TransactionRow[];
+    return (rows ?? []).map(mapTx);
   });
 
 /** Signed effect a transaction has on its account balance. */
@@ -296,11 +317,16 @@ export const saveTransaction = createServerFn({ method: "POST" })
         amount_pence: z.number().int().positive(),
         date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
         note: z.string().max(300).nullish(),
+        classification: z.enum(["income", "expense", "transfer", "internal", "excluded"]).nullish(),
+        counterpart_account_id: z.string().uuid().nullish(),
       })
       .parse(input),
   )
   .handler(async ({ context, data }) => {
     const { supabase, userId } = context;
+    const classification = data.classification ?? data.type;
+    const isMove = classification === "transfer" || classification === "internal";
+    const userSet = !!data.classification && data.classification !== data.type;
     const payload = {
       user_id: userId,
       account_id: data.account_id ?? null,
@@ -309,6 +335,11 @@ export const saveTransaction = createServerFn({ method: "POST" })
       amount_pence: data.amount_pence,
       date: data.date,
       note: data.note ?? null,
+      classification,
+      counterpart_account_id: isMove ? (data.counterpart_account_id ?? null) : null,
+      ...(userSet
+        ? { classification_source: "user" as const, review_status: "confirmed" as const, reasons: ["You set this classification"] }
+        : {}),
     };
     if (data.id) {
       // Undo the old row's effect on its account before applying the new one.
@@ -524,7 +555,7 @@ export const listBudgets = createServerFn({ method: "POST" })
         .from("transactions")
         .select("category_id, amount_pence")
         .eq("user_id", userId)
-        .eq("type", "expense")
+        .eq("classification", "expense")
         .gte("date", start)
         .lte("date", end),
     ]);
@@ -991,11 +1022,11 @@ export const getDashboard = createServerFn({ method: "GET" })
       supabase.from("debt_payments").select("amount_pence").eq("user_id", userId),
       supabase
         .from("transactions")
-        .select(
-          "id, account_id, category_id, type, amount_pence, date, note, categories(name), accounts(name)",
-        )
+        .select(TX_SELECT)
         .eq("user_id", userId)
-        .gte("date", twelveMonthsAgo),
+        .gte("date", twelveMonthsAgo)
+        .order("date", { ascending: false })
+        .limit(5000),
     ]);
     if (accountsRes.error) throw new Error(accountsRes.error.message);
     if (debtsRes.error) throw new Error(debtsRes.error.message);
@@ -1006,22 +1037,7 @@ export const getDashboard = createServerFn({ method: "GET" })
       type: string;
       balance_pence: number | string;
     }[];
-    const allTxs = (txRes.data ?? []).map((r) => {
-      const row = r as Record<string, unknown>;
-      const cat = row["categories"] as { name: string } | null;
-      const acc = row["accounts"] as { name: string } | null;
-      return {
-        id: row["id"] as string,
-        account_id: row["account_id"] as string | null,
-        category_id: row["category_id"] as string | null,
-        type: row["type"] as "income" | "expense",
-        amount_pence: Number(row["amount_pence"]),
-        date: row["date"] as string,
-        note: row["note"] as string | null,
-        category_name: cat?.name ?? null,
-        account_name: acc?.name ?? null,
-      } satisfies TransactionRow;
-    });
+    const allTxs = (txRes.data ?? []).map(mapTx);
 
     // Net worth: positive account balances are assets, negative ones (credit
     // cards, loans) and recorded debts are liabilities.
@@ -1043,8 +1059,8 @@ export const getDashboard = createServerFn({ method: "GET" })
     const spendingByCategory = new Map<string, number>();
     for (const t of allTxs) {
       if (t.date < monthStartDate) continue;
-      if (t.type === "income") income += t.amount_pence;
-      else {
+      if (t.classification === "income") income += t.amount_pence;
+      else if (t.classification === "expense") {
         expenses += t.amount_pence;
         const key = t.category_name ?? "Uncategorised";
         spendingByCategory.set(key, (spendingByCategory.get(key) ?? 0) + t.amount_pence);
@@ -1068,10 +1084,10 @@ export const getDashboard = createServerFn({ method: "GET" })
       monthly.push({
         month: key,
         income: allTxs
-          .filter((t) => t.date.slice(0, 7) === key && t.type === "income")
+          .filter((t) => t.date.slice(0, 7) === key && t.classification === "income")
           .reduce((s, t) => s + t.amount_pence, 0),
         expenses: allTxs
-          .filter((t) => t.date.slice(0, 7) === key && t.type === "expense")
+          .filter((t) => t.date.slice(0, 7) === key && t.classification === "expense")
           .reduce((s, t) => s + t.amount_pence, 0),
         netWorth: runningNetWorth,
       });
@@ -1416,7 +1432,7 @@ export const getSpennyScore = createServerFn({ method: "GET" })
 
     const [acc, tx, bp, bl, bud, gl, gc, dt, dp, tr] = await Promise.all([
       supabase.from("accounts").select("id, type, balance_pence, archived").eq("user_id", userId),
-      supabase.from("transactions").select("id, account_id, category_id, type, amount_pence, date").eq("user_id", userId).gte("date", histStart),
+      supabase.from("transactions").select("id, account_id, category_id, type, classification, counterpart_account_id, link_id, amount_pence, date").eq("user_id", userId).gte("date", histStart).limit(5000),
       supabase.from("bill_payments").select("bill_id, period, paid_on, transaction_id").eq("user_id", userId),
       supabase.from("bills").select("id, name, kind, amount_pence, cadence, due_day, account_id, category_id, note, active, created_at, accounts(name), categories(name)").eq("user_id", userId),
       supabase.from("budgets").select("category_id, month, limit_pence, categories(name)").eq("user_id", userId).in("month", [curStart, prevStart]),
@@ -1431,7 +1447,7 @@ export const getSpennyScore = createServerFn({ method: "GET" })
     const accounts = (acc.data ?? []).map((a) => ({ id: a.id, type: asAccountType(a.type), balance: Number(a.balance_pence), archived: a.archived }));
     const accType = new Map(accounts.map((a) => [a.id, a.type]));
     const accessibleIds = new Set(accounts.filter((a) => a.type === "current" || a.type === "savings").map((a) => a.id));
-    const txs = (tx.data ?? []).map((t) => ({ ...t, amount_pence: Number(t.amount_pence) }));
+    const txs = (tx.data ?? []).map((t) => ({ ...t, amount_pence: Number(t.amount_pence), econ: economicType(t) }));
     const billTxIds = new Set((bp.data ?? []).map((p) => p.transaction_id).filter((x): x is string => !!x));
     const billRows = buildBillRows(bl.data ?? [], bp.data ?? []);
     const paidPeriods = new Set((bp.data ?? []).map((p) => `${p.bill_id}|${p.period}`));
@@ -1441,7 +1457,7 @@ export const getSpennyScore = createServerFn({ method: "GET" })
 
     const inRange = (d: string, a: string, b: string) => d >= a && d <= b;
     const dayToDayIn = (a: string, b: string) =>
-      txs.filter((t) => t.type === "expense" && !billTxIds.has(t.id) && inRange(t.date, a, b)).reduce((s, t) => s + t.amount_pence, 0);
+      txs.filter((t) => t.econ === "expense" && !billTxIds.has(t.id) && inRange(t.date, a, b)).reduce((s, t) => s + t.amount_pence, 0);
 
     // Typical day-to-day spend: mean of the last 3 full months that had spending.
     const hist: number[] = [];
@@ -1477,7 +1493,7 @@ export const getSpennyScore = createServerFn({ method: "GET" })
           return {
             name: cat?.name ?? "Budget",
             limitPence: Number(x.limit_pence),
-            spentPence: txs.filter((t) => t.type === "expense" && t.category_id === x.category_id && inRange(t.date, a, b)).reduce((s, t) => s + t.amount_pence, 0),
+            spentPence: txs.filter((t) => t.econ === "expense" && t.category_id === x.category_id && inRange(t.date, a, b)).reduce((s, t) => s + t.amount_pence, 0),
           };
         });
       const billsThen = activeBills.filter((x) => x.created_at.slice(0, 10) <= b);
@@ -1495,9 +1511,9 @@ export const getSpennyScore = createServerFn({ method: "GET" })
       return {
         periodFraction: isCurrent ? Number(today.slice(8, 10)) / daysInMonth : 1,
         asOf: b,
-        incomePence: txs.filter((t) => t.type === "income" && inRange(t.date, a, b)).reduce((s, t) => s + t.amount_pence, 0),
+        incomePence: txs.filter((t) => t.econ === "income" && inRange(t.date, a, b)).reduce((s, t) => s + t.amount_pence, 0),
         dayToDaySpendingPence: dayToDayIn(a, b),
-        billPaymentsPence: txs.filter((t) => t.type === "expense" && billTxIds.has(t.id) && inRange(t.date, a, b)).reduce((s, t) => s + t.amount_pence, 0),
+        billPaymentsPence: txs.filter((t) => t.econ === "expense" && billTxIds.has(t.id) && inRange(t.date, a, b)).reduce((s, t) => s + t.amount_pence, 0),
         recurringMonthlyPence: billsThen.reduce((s, x) => s + x.monthly_cost_pence, 0),
         activeBillCount: billsThen.length,
         overdueBills,
@@ -1524,15 +1540,27 @@ export const getSpennyScore = createServerFn({ method: "GET" })
               paidPence: debtPays.filter((p) => p.debt_id === d.id && inRange(p.date, a, b)).reduce((s, p) => s + p.amount_pence, 0),
             };
           }),
-        transfers: transfers
-          .filter((t) => inRange(t.date, a, b))
-          .map((t) => ({
-            amountPence: t.amount_pence,
-            date: t.date,
-            fromType: t.from_account_id ? (accType.get(t.from_account_id) ?? null) : null,
-            toType: t.to_account_id ? (accType.get(t.to_account_id) ?? null) : null,
-            toDebt: !!t.to_debt_id,
-          })),
+        transfers: [
+          ...transfers
+            .filter((t) => inRange(t.date, a, b))
+            .map((t) => ({
+              amountPence: t.amount_pence,
+              date: t.date,
+              fromType: t.from_account_id ? (accType.get(t.from_account_id) ?? null) : null,
+              toType: t.to_account_id ? (accType.get(t.to_account_id) ?? null) : null,
+              toDebt: !!t.to_debt_id,
+            })),
+          // Imported transfers between own accounts (outgoing side only, so each counts once).
+          ...txs
+            .filter((t) => t.econ === "transfer" && t.type === "expense" && t.counterpart_account_id && t.account_id && inRange(t.date, a, b))
+            .map((t) => ({
+              amountPence: t.amount_pence,
+              date: t.date,
+              fromType: accType.get(t.account_id!) ?? null,
+              toType: accType.get(t.counterpart_account_id!) ?? null,
+              toDebt: false,
+            })),
+        ],
         accessibleSavingsPence: isCurrent ? accessibleNow : Math.max(0, accessibleNow - accessibleDelta),
         avgDayToDaySpendingPence: avgDayToDay,
       };
@@ -1548,4 +1576,273 @@ export const getSpennyScore = createServerFn({ method: "GET" })
       change: compareScores(current, previous),
       previousMonth: prevStart,
     };
+  });
+
+/* ------------------------ reconciliation & review ------------------------ */
+
+export type ReviewItem = TransactionRow & {
+  suggestion: {
+    classification: Classification;
+    counterpartTxId?: string | null;
+    counterpartAccountId?: string | null;
+    confidence: string;
+    kind: "transfer" | "internal" | "duplicate" | "salary";
+    duplicateOfId?: string | null;
+  } | null;
+  counterpart: { id: string; note: string | null; date: string; account_name: string | null } | null;
+};
+
+async function loadAllTransactions(supabase: { from: (t: string) => any }, userId: string) {
+  const rows: Record<string, unknown>[] = [];
+  for (let from = 0; ; from += 1000) {
+    const { data, error } = await supabase
+      .from("transactions")
+      .select(TX_SELECT.replace("accounts!transactions_account_id_fkey(name)", "accounts!transactions_account_id_fkey(name, type)") + ", suggestion")
+      .eq("user_id", userId)
+      .order("id")
+      .range(from, from + 999);
+    if (error) throw new Error(error.message);
+    rows.push(...(data ?? []));
+    if (!data || data.length < 1000) break;
+  }
+  return rows;
+}
+
+/**
+ * Classify every transaction across all accounts: transfers, pot movements,
+ * duplicates and salary. Idempotent — user decisions are never touched and
+ * re-running writes identical values (no new records are created).
+ */
+export const reconcileTransactions = createServerFn({ method: "POST" })
+  .middleware([requireSupabaseAuth])
+  .handler(async ({ context }): Promise<RecSummary & { changed: number; total: number }> => {
+    const { supabase, userId } = context;
+    const rows = await loadAllTransactions(supabase, userId);
+    const recTxs: RecTx[] = rows.map((r) => {
+      const acc = r["accounts"] as { name: string; type: string } | null;
+      return {
+        id: r["id"] as string,
+        accountId: r["account_id"] as string | null,
+        accountName: acc?.name ?? null,
+        accountType: acc?.type ?? null,
+        date: r["date"] as string,
+        direction: r["type"] === "income" ? "in" : "out",
+        amountPence: Number(r["amount_pence"]),
+        note: (r["note"] as string | null) ?? "",
+        locked: r["classification_source"] === "user",
+      };
+    });
+    const results = reconcile(recTxs);
+    const byId = new Map(rows.map((r) => [r["id"] as string, r]));
+    const now = new Date().toISOString();
+    const updates = results
+      .map((res) => {
+        const prev = byId.get(res.id)!;
+        const next = {
+          classification: res.classification,
+          confidence: res.confidence,
+          link_id: res.linkId,
+          counterpart_account_id: res.counterpartAccountId,
+          duplicate_of: res.duplicateOf,
+          review_status: res.needsReview ? "needs_review" : "none",
+          reasons: res.reasons,
+          suggestion: res.suggestion,
+        };
+        const same = (Object.keys(next) as (keyof typeof next)[]).every(
+          (k) => JSON.stringify(prev[k] ?? null) === JSON.stringify(next[k] ?? null),
+        );
+        return same ? null : { id: res.id, ...next, reconciled_at: now };
+      })
+      .filter((u): u is NonNullable<typeof u> => !!u);
+
+    for (let i = 0; i < updates.length; i += 25) {
+      await Promise.all(
+        updates.slice(i, i + 25).map(async ({ id, ...u }) => {
+          const { error } = await supabase.from("transactions").update(u).eq("id", id).eq("user_id", userId);
+          if (error) throw new Error(error.message);
+        }),
+      );
+    }
+    return { ...summarise(recTxs, results), changed: updates.length, total: rows.length };
+  });
+
+export const listReviewItems = createServerFn({ method: "GET" })
+  .middleware([requireSupabaseAuth])
+  .handler(async ({ context }): Promise<ReviewItem[]> => {
+    const { supabase, userId } = context;
+    const { data, error } = await supabase
+      .from("transactions")
+      .select(`${TX_SELECT}, suggestion`)
+      .eq("user_id", userId)
+      .eq("review_status", "needs_review")
+      .order("date", { ascending: false })
+      .limit(300);
+    if (error) throw new Error(error.message);
+    const items = (data ?? []).map((r) => ({
+      ...mapTx(r),
+      suggestion: ((r as Record<string, unknown>)["suggestion"] ?? null) as ReviewItem["suggestion"],
+      counterpart: null as ReviewItem["counterpart"],
+    }));
+    const ids = [
+      ...new Set(
+        items.flatMap((i) => [i.suggestion?.counterpartTxId, i.suggestion?.duplicateOfId]).filter((x): x is string => !!x),
+      ),
+    ];
+    if (ids.length) {
+      const { data: others, error: oErr } = await supabase
+        .from("transactions")
+        .select("id, note, date, accounts!transactions_account_id_fkey(name)")
+        .eq("user_id", userId)
+        .in("id", ids);
+      if (oErr) throw new Error(oErr.message);
+      const m = new Map(
+        (others ?? []).map((o) => [
+          o.id as string,
+          { id: o.id as string, note: o.note as string | null, date: o.date as string, account_name: ((o as Record<string, unknown>)["accounts"] as { name: string } | null)?.name ?? null },
+        ]),
+      );
+      for (const i of items) {
+        const cid = i.suggestion?.counterpartTxId ?? i.suggestion?.duplicateOfId;
+        i.counterpart = cid ? (m.get(cid) ?? null) : null;
+      }
+    }
+    return items;
+  });
+
+const classificationEnum = z.enum(["income", "expense", "transfer", "internal", "excluded"]);
+
+/** Accept or reject the suggestion on a flagged transaction. */
+export const resolveReview = createServerFn({ method: "POST" })
+  .middleware([requireSupabaseAuth])
+  .inputValidator((input: unknown) =>
+    z.object({ id: z.string().uuid(), action: z.enum(["confirm", "reject"]) }).parse(input),
+  )
+  .handler(async ({ context, data }) => {
+    const { supabase, userId } = context;
+    const { data: row, error } = await supabase
+      .from("transactions")
+      .select("id, type, account_id, reasons, suggestion, classification")
+      .eq("id", data.id)
+      .eq("user_id", userId)
+      .maybeSingle();
+    if (error) throw new Error(error.message);
+    if (!row) throw new Error("Transaction not found");
+    const sug = row.suggestion as ReviewItem["suggestion"];
+    const reasons = Array.isArray(row.reasons) ? (row.reasons as string[]) : [];
+
+    if (data.action === "reject" || !sug) {
+      const { error: e } = await supabase
+        .from("transactions")
+        .update({
+          classification_source: "user",
+          review_status: "dismissed",
+          duplicate_of: null,
+          classification: sug?.kind === "duplicate" ? row.classification : row.type,
+          link_id: null,
+          counterpart_account_id: null,
+          reasons: [...reasons.filter((r) => !r.startsWith("Not changed")), "You chose to keep this separate"],
+        })
+        .eq("id", data.id)
+        .eq("user_id", userId);
+      if (e) throw new Error(e.message);
+      // Release a reserved partner so it can be reviewed on its own.
+      if (sug?.counterpartTxId) {
+        await supabase
+          .from("transactions")
+          .update({ review_status: "none", suggestion: null, confidence: null })
+          .eq("id", sug.counterpartTxId)
+          .eq("user_id", userId)
+          .eq("classification_source", "auto");
+      }
+      return { ok: true };
+    }
+
+    const confirmed = [...reasons.filter((r) => !r.startsWith("Not changed")), "You confirmed this"];
+    const linkId = sug.counterpartTxId
+      ? [data.id, sug.counterpartTxId].sort().join(":")
+      : null;
+    const { error: e } = await supabase
+      .from("transactions")
+      .update({
+        classification: sug.classification,
+        classification_source: "user",
+        review_status: "confirmed",
+        link_id: linkId,
+        counterpart_account_id: sug.counterpartAccountId ?? (sug.classification === "internal" ? row.account_id : null),
+        reasons: confirmed,
+      })
+      .eq("id", data.id)
+      .eq("user_id", userId);
+    if (e) throw new Error(e.message);
+    if (sug.counterpartTxId) {
+      const { error: e2 } = await supabase
+        .from("transactions")
+        .update({
+          classification: sug.classification,
+          classification_source: "user",
+          review_status: "confirmed",
+          link_id: linkId,
+          counterpart_account_id: row.account_id,
+          reasons: confirmed,
+        })
+        .eq("id", sug.counterpartTxId)
+        .eq("user_id", userId);
+      if (e2) throw new Error(e2.message);
+    }
+    return { ok: true };
+  });
+
+/** Manually set what a transaction really is. */
+export const setClassification = createServerFn({ method: "POST" })
+  .middleware([requireSupabaseAuth])
+  .inputValidator((input: unknown) =>
+    z
+      .object({
+        id: z.string().uuid(),
+        classification: classificationEnum,
+        counterpart_account_id: z.string().uuid().nullish(),
+      })
+      .parse(input),
+  )
+  .handler(async ({ context, data }) => {
+    const { supabase, userId } = context;
+    const { data: row, error } = await supabase
+      .from("transactions")
+      .select("id, link_id, account_id")
+      .eq("id", data.id)
+      .eq("user_id", userId)
+      .maybeSingle();
+    if (error) throw new Error(error.message);
+    if (!row) throw new Error("Transaction not found");
+    const isMove = data.classification === "transfer" || data.classification === "internal";
+    const { error: e } = await supabase
+      .from("transactions")
+      .update({
+        classification: data.classification,
+        classification_source: "user",
+        review_status: "confirmed",
+        duplicate_of: null,
+        counterpart_account_id: isMove
+          ? (data.counterpart_account_id ?? (data.classification === "internal" ? row.account_id : null))
+          : null,
+        link_id: isMove ? row.link_id : null,
+        reasons: ["You set this classification"],
+      })
+      .eq("id", data.id)
+      .eq("user_id", userId);
+    if (e) throw new Error(e.message);
+    // Unlinking one side: ask about the partner rather than guessing.
+    if (row.link_id && !isMove) {
+      await supabase
+        .from("transactions")
+        .update({
+          link_id: null,
+          review_status: "needs_review",
+          reasons: ["Its matching transaction was changed — please check this one too"],
+        })
+        .eq("user_id", userId)
+        .eq("link_id", row.link_id)
+        .neq("id", data.id);
+    }
+    return { ok: true };
   });

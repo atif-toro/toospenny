@@ -382,10 +382,20 @@ export type Database = {
           account_id: string | null
           amount_pence: number
           category_id: string | null
+          classification: string | null
+          classification_source: string
+          confidence: string | null
+          counterpart_account_id: string | null
           created_at: string
           date: string
+          duplicate_of: string | null
           id: string
+          link_id: string | null
           note: string | null
+          reasons: Json
+          reconciled_at: string | null
+          review_status: string
+          suggestion: Json | null
           type: string
           user_id: string
         }
@@ -393,10 +403,20 @@ export type Database = {
           account_id?: string | null
           amount_pence: number
           category_id?: string | null
+          classification?: string | null
+          classification_source?: string
+          confidence?: string | null
+          counterpart_account_id?: string | null
           created_at?: string
           date?: string
+          duplicate_of?: string | null
           id?: string
+          link_id?: string | null
           note?: string | null
+          reasons?: Json
+          reconciled_at?: string | null
+          review_status?: string
+          suggestion?: Json | null
           type: string
           user_id: string
         }
@@ -404,10 +424,20 @@ export type Database = {
           account_id?: string | null
           amount_pence?: number
           category_id?: string | null
+          classification?: string | null
+          classification_source?: string
+          confidence?: string | null
+          counterpart_account_id?: string | null
           created_at?: string
           date?: string
+          duplicate_of?: string | null
           id?: string
+          link_id?: string | null
           note?: string | null
+          reasons?: Json
+          reconciled_at?: string | null
+          review_status?: string
+          suggestion?: Json | null
           type?: string
           user_id?: string
         }
@@ -424,6 +454,20 @@ export type Database = {
             columns: ["category_id"]
             isOneToOne: false
             referencedRelation: "categories"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "transactions_counterpart_account_id_fkey"
+            columns: ["counterpart_account_id"]
+            isOneToOne: false
+            referencedRelation: "accounts"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "transactions_duplicate_of_fkey"
+            columns: ["duplicate_of"]
+            isOneToOne: false
+            referencedRelation: "transactions"
             referencedColumns: ["id"]
           },
         ]

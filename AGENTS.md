@@ -9,3 +9,4 @@
 > the editor, so keep the branch in a working state.
 <!-- LOVABLE:END -->
 - Spenny Score maths lives in the pure module src/lib/spenny-score.ts (SCORE_CONFIG + computeScore/compareScores, vitest-covered); the server fn only gathers inputs — keeps scoring deterministic and testable.
+- Transaction meaning lives in transactions.classification (income/expense/transfer/internal/excluded), set by the pure src/lib/reconcile.ts; `type` is only statement direction for balances. All income/spending totals read classification — one source of truth, user choices (classification_source=user) never overwritten.

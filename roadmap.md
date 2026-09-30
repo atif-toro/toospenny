@@ -10,3 +10,4 @@
 - [x] Bank statement CSV import (Monzo, Revolut, NatWest, Lloyds, Halifax, Amex, Capital One + auto-detect)
 - [x] Scan PDF / photo statements with AI into the import review table
 - [x] Spenny Score: dashboard card + details panel, pure scoring module with tests
+- [x] Smart transfer detection: classifications, cross-account + pot matching, duplicates, salary, review panel, reconciliation of existing data

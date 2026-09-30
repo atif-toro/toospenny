@@ -283,7 +283,7 @@ export function DashboardPage() {
                 <span
                   className={
                     "ml-4 flex shrink-0 items-center gap-1 text-sm font-semibold tabular-nums " +
-                    (t.type === "income" ? "text-chart-1" : "text-foreground")
+                    (t.classification === "income" ? "text-chart-1" : t.classification === "expense" ? "text-foreground" : "text-muted-foreground")
                   }
                 >
                   {t.type === "income" ? (
