@@ -247,7 +247,8 @@ export function ImportStatementDialog({
         <DialogHeader>
           <DialogTitle>Import a bank statement</DialogTitle>
           <DialogDescription>
-            Upload a CSV, PDF or photo of your statement, check the rows, then add them to Too Spenny.
+            Upload a CSV or PDF statement from your bank. It is read on your device, check the rows,
+            then add them to Too Spenny.
           </DialogDescription>
         </DialogHeader>
 
