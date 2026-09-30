@@ -68,7 +68,7 @@ const STRONG_INTERNAL = /\bpots?\b|salary sorter|round ?ups?\b|\bvaults?\b|savin
 const WEAK_INTERNAL = /^(deposit|withdrawal)\b/i;
 const TOPUP = /\btop-?up\b|\btopped up\b/i;
 const TRANSFER_WORDS =
-  /\btransfer|\bfaster payments?\b|\bopen banking\b|\bstanding order\b|\bbank transfer\b|\bmoved\b|^transaction$|\bfps\b|\bown account\b|\bsaving|\bcard payment\b(?=.*\b(amex|american express|capital one|barclaycard)\b)/i;
+  /\btransfer|\bfaster payments?\b|\bopen banking\b|\bstanding order\b|\bbank transfer\b|\bmoved\b|^transaction$|\bfps\b|^[\d\s]{8,}[a-z]?$|\bown account\b|\bsaving|\bcard payment\b(?=.*\b(amex|american express|capital one|barclaycard)\b)/i;
 const PERSONAL = /\bp2p\b|^to [a-z]+ [a-z]+/i;
 const VAGUE = /^(transaction|unknown description)$/i;
 const PAYROLL = /\b(salary|payroll|wages|pay run|bacs|automated credit|net pay|employer)\b/i;
@@ -119,7 +119,7 @@ export function scoreTransferPair(out: RecTx, inn: RecTx): { score: number; reas
   let score = 0;
   if (out.amountPence !== inn.amountPence) return { score: 0, reasons };
   score += 45;
-  reasons.push(`Matching ${gbp(out.amountPence)} transaction found in ${inn.accountId === out.accountId ? "the same account" : (out.direction === "out" ? inn.accountName : out.accountName) ?? "another account"}`);
+  reasons.push(`Matching ${gbp(out.amountPence)} left ${out.accountName ?? "one account"} and arrived in ${inn.accountName ?? "another account"}`);
   const days = dayDiff(out.date, inn.date);
   if (days === 0) {
     score += 25;
