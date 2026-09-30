@@ -309,7 +309,7 @@ export function ImportStatementDialog({
 
         {parsing ? (
           <div className="flex items-center gap-2 py-6 text-sm text-muted-foreground">
-            <Loader2 className="h-4 w-4 animate-spin" /> Reading your statement… (photos and PDFs can take up to a minute)
+            <Loader2 className="h-4 w-4 animate-spin" /> Reading your statement on this device…
           </div>
         ) : rows.length > 0 ? (
           <>
