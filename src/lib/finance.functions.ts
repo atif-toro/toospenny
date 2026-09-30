@@ -17,6 +17,7 @@ import {
   type ScoreInputs,
   type ScoreResult,
 } from "@/lib/spenny-score";
+import { economicType, reconcile, summarise, type Classification, type RecTx, type RecSummary } from "@/lib/reconcile";
 
 /* ---------------------------------- types --------------------------------- */
 
@@ -40,7 +41,44 @@ export type TransactionRow = {
   note: string | null;
   category_name: string | null;
   account_name: string | null;
+  classification: Classification;
+  classification_source: "auto" | "user";
+  review_status: string;
+  confidence: string | null;
+  reasons: string[];
+  link_id: string | null;
+  counterpart_account_id: string | null;
+  duplicate_of: string | null;
 };
+
+const TX_SELECT =
+  "id, account_id, category_id, type, amount_pence, date, note, classification, classification_source, review_status, confidence, reasons, link_id, counterpart_account_id, duplicate_of, categories(name), accounts(name)";
+
+function mapTx(r: unknown): TransactionRow {
+  const row = r as Record<string, unknown>;
+  const cat = row["categories"] as { name: string } | null;
+  const acc = row["accounts"] as { name: string } | null;
+  const type = row["type"] as "income" | "expense";
+  return {
+    id: row["id"] as string,
+    account_id: row["account_id"] as string | null,
+    category_id: row["category_id"] as string | null,
+    type,
+    amount_pence: Number(row["amount_pence"]),
+    date: row["date"] as string,
+    note: row["note"] as string | null,
+    category_name: cat?.name ?? null,
+    account_name: acc?.name ?? null,
+    classification: economicType({ type, classification: row["classification"] as string | null }),
+    classification_source: (row["classification_source"] as "auto" | "user") ?? "auto",
+    review_status: (row["review_status"] as string) ?? "none",
+    confidence: (row["confidence"] as string | null) ?? null,
+    reasons: Array.isArray(row["reasons"]) ? (row["reasons"] as string[]) : [],
+    link_id: (row["link_id"] as string | null) ?? null,
+    counterpart_account_id: (row["counterpart_account_id"] as string | null) ?? null,
+    duplicate_of: (row["duplicate_of"] as string | null) ?? null,
+  };
+}
 
 export type DebtRow = {
   id: string;
@@ -213,9 +251,7 @@ export const listTransactions = createServerFn({ method: "POST" })
     const { supabase, userId } = context;
     let query = supabase
       .from("transactions")
-      .select(
-        "id, account_id, category_id, type, amount_pence, date, note, categories(name), accounts(name)",
-      )
+      .select(TX_SELECT)
       .eq("user_id", userId)
       .order("date", { ascending: false })
       .order("created_at", { ascending: false });
@@ -236,22 +272,7 @@ export const listTransactions = createServerFn({ method: "POST" })
     const { data: rows, error } = await query.limit(data.limit ?? 200);
     if (error) throw new Error(error.message);
 
-    return (rows ?? []).map((r) => {
-      const row = r as Record<string, unknown>;
-      const cat = row["categories"] as { name: string } | null;
-      const acc = row["accounts"] as { name: string } | null;
-      return {
-        id: row["id"] as string,
-        account_id: row["account_id"] as string | null,
-        category_id: row["category_id"] as string | null,
-        type: row["type"] as "income" | "expense",
-        amount_pence: Number(row["amount_pence"]),
-        date: row["date"] as string,
-        note: row["note"] as string | null,
-        category_name: cat?.name ?? null,
-        account_name: acc?.name ?? null,
-      };
-    }) as TransactionRow[];
+    return (rows ?? []).map(mapTx);
   });
 
 /** Signed effect a transaction has on its account balance. */
@@ -524,7 +545,7 @@ export const listBudgets = createServerFn({ method: "POST" })
         .from("transactions")
         .select("category_id, amount_pence")
         .eq("user_id", userId)
-        .eq("type", "expense")
+        .eq("classification", "expense")
         .gte("date", start)
         .lte("date", end),
     ]);
@@ -991,11 +1012,11 @@ export const getDashboard = createServerFn({ method: "GET" })
       supabase.from("debt_payments").select("amount_pence").eq("user_id", userId),
       supabase
         .from("transactions")
-        .select(
-          "id, account_id, category_id, type, amount_pence, date, note, categories(name), accounts(name)",
-        )
+        .select(TX_SELECT)
         .eq("user_id", userId)
-        .gte("date", twelveMonthsAgo),
+        .gte("date", twelveMonthsAgo)
+        .order("date", { ascending: false })
+        .limit(5000),
     ]);
     if (accountsRes.error) throw new Error(accountsRes.error.message);
     if (debtsRes.error) throw new Error(debtsRes.error.message);
@@ -1006,22 +1027,7 @@ export const getDashboard = createServerFn({ method: "GET" })
       type: string;
       balance_pence: number | string;
     }[];
-    const allTxs = (txRes.data ?? []).map((r) => {
-      const row = r as Record<string, unknown>;
-      const cat = row["categories"] as { name: string } | null;
-      const acc = row["accounts"] as { name: string } | null;
-      return {
-        id: row["id"] as string,
-        account_id: row["account_id"] as string | null,
-        category_id: row["category_id"] as string | null,
-        type: row["type"] as "income" | "expense",
-        amount_pence: Number(row["amount_pence"]),
-        date: row["date"] as string,
-        note: row["note"] as string | null,
-        category_name: cat?.name ?? null,
-        account_name: acc?.name ?? null,
-      } satisfies TransactionRow;
-    });
+    const allTxs = (txRes.data ?? []).map(mapTx);
 
     // Net worth: positive account balances are assets, negative ones (credit
     // cards, loans) and recorded debts are liabilities.
@@ -1043,8 +1049,8 @@ export const getDashboard = createServerFn({ method: "GET" })
     const spendingByCategory = new Map<string, number>();
     for (const t of allTxs) {
       if (t.date < monthStartDate) continue;
-      if (t.type === "income") income += t.amount_pence;
-      else {
+      if (t.classification === "income") income += t.amount_pence;
+      else if (t.classification === "expense") {
         expenses += t.amount_pence;
         const key = t.category_name ?? "Uncategorised";
         spendingByCategory.set(key, (spendingByCategory.get(key) ?? 0) + t.amount_pence);
@@ -1068,10 +1074,10 @@ export const getDashboard = createServerFn({ method: "GET" })
       monthly.push({
         month: key,
         income: allTxs
-          .filter((t) => t.date.slice(0, 7) === key && t.type === "income")
+          .filter((t) => t.date.slice(0, 7) === key && t.classification === "income")
           .reduce((s, t) => s + t.amount_pence, 0),
         expenses: allTxs
-          .filter((t) => t.date.slice(0, 7) === key && t.type === "expense")
+          .filter((t) => t.date.slice(0, 7) === key && t.classification === "expense")
           .reduce((s, t) => s + t.amount_pence, 0),
         netWorth: runningNetWorth,
       });
@@ -1416,7 +1422,7 @@ export const getSpennyScore = createServerFn({ method: "GET" })
 
     const [acc, tx, bp, bl, bud, gl, gc, dt, dp, tr] = await Promise.all([
       supabase.from("accounts").select("id, type, balance_pence, archived").eq("user_id", userId),
-      supabase.from("transactions").select("id, account_id, category_id, type, amount_pence, date").eq("user_id", userId).gte("date", histStart),
+      supabase.from("transactions").select("id, account_id, category_id, type, classification, counterpart_account_id, link_id, amount_pence, date").eq("user_id", userId).gte("date", histStart).limit(5000),
       supabase.from("bill_payments").select("bill_id, period, paid_on, transaction_id").eq("user_id", userId),
       supabase.from("bills").select("id, name, kind, amount_pence, cadence, due_day, account_id, category_id, note, active, created_at, accounts(name), categories(name)").eq("user_id", userId),
       supabase.from("budgets").select("category_id, month, limit_pence, categories(name)").eq("user_id", userId).in("month", [curStart, prevStart]),
@@ -1431,7 +1437,7 @@ export const getSpennyScore = createServerFn({ method: "GET" })
     const accounts = (acc.data ?? []).map((a) => ({ id: a.id, type: asAccountType(a.type), balance: Number(a.balance_pence), archived: a.archived }));
     const accType = new Map(accounts.map((a) => [a.id, a.type]));
     const accessibleIds = new Set(accounts.filter((a) => a.type === "current" || a.type === "savings").map((a) => a.id));
-    const txs = (tx.data ?? []).map((t) => ({ ...t, amount_pence: Number(t.amount_pence) }));
+    const txs = (tx.data ?? []).map((t) => ({ ...t, amount_pence: Number(t.amount_pence), econ: economicType(t) }));
     const billTxIds = new Set((bp.data ?? []).map((p) => p.transaction_id).filter((x): x is string => !!x));
     const billRows = buildBillRows(bl.data ?? [], bp.data ?? []);
     const paidPeriods = new Set((bp.data ?? []).map((p) => `${p.bill_id}|${p.period}`));
@@ -1441,7 +1447,7 @@ export const getSpennyScore = createServerFn({ method: "GET" })
 
     const inRange = (d: string, a: string, b: string) => d >= a && d <= b;
     const dayToDayIn = (a: string, b: string) =>
-      txs.filter((t) => t.type === "expense" && !billTxIds.has(t.id) && inRange(t.date, a, b)).reduce((s, t) => s + t.amount_pence, 0);
+      txs.filter((t) => t.econ === "expense" && !billTxIds.has(t.id) && inRange(t.date, a, b)).reduce((s, t) => s + t.amount_pence, 0);
 
     // Typical day-to-day spend: mean of the last 3 full months that had spending.
     const hist: number[] = [];
@@ -1477,7 +1483,7 @@ export const getSpennyScore = createServerFn({ method: "GET" })
           return {
             name: cat?.name ?? "Budget",
             limitPence: Number(x.limit_pence),
-            spentPence: txs.filter((t) => t.type === "expense" && t.category_id === x.category_id && inRange(t.date, a, b)).reduce((s, t) => s + t.amount_pence, 0),
+            spentPence: txs.filter((t) => t.econ === "expense" && t.category_id === x.category_id && inRange(t.date, a, b)).reduce((s, t) => s + t.amount_pence, 0),
           };
         });
       const billsThen = activeBills.filter((x) => x.created_at.slice(0, 10) <= b);
@@ -1495,9 +1501,9 @@ export const getSpennyScore = createServerFn({ method: "GET" })
       return {
         periodFraction: isCurrent ? Number(today.slice(8, 10)) / daysInMonth : 1,
         asOf: b,
-        incomePence: txs.filter((t) => t.type === "income" && inRange(t.date, a, b)).reduce((s, t) => s + t.amount_pence, 0),
+        incomePence: txs.filter((t) => t.econ === "income" && inRange(t.date, a, b)).reduce((s, t) => s + t.amount_pence, 0),
         dayToDaySpendingPence: dayToDayIn(a, b),
-        billPaymentsPence: txs.filter((t) => t.type === "expense" && billTxIds.has(t.id) && inRange(t.date, a, b)).reduce((s, t) => s + t.amount_pence, 0),
+        billPaymentsPence: txs.filter((t) => t.econ === "expense" && billTxIds.has(t.id) && inRange(t.date, a, b)).reduce((s, t) => s + t.amount_pence, 0),
         recurringMonthlyPence: billsThen.reduce((s, x) => s + x.monthly_cost_pence, 0),
         activeBillCount: billsThen.length,
         overdueBills,
@@ -1524,15 +1530,27 @@ export const getSpennyScore = createServerFn({ method: "GET" })
               paidPence: debtPays.filter((p) => p.debt_id === d.id && inRange(p.date, a, b)).reduce((s, p) => s + p.amount_pence, 0),
             };
           }),
-        transfers: transfers
-          .filter((t) => inRange(t.date, a, b))
-          .map((t) => ({
-            amountPence: t.amount_pence,
-            date: t.date,
-            fromType: t.from_account_id ? (accType.get(t.from_account_id) ?? null) : null,
-            toType: t.to_account_id ? (accType.get(t.to_account_id) ?? null) : null,
-            toDebt: !!t.to_debt_id,
-          })),
+        transfers: [
+          ...transfers
+            .filter((t) => inRange(t.date, a, b))
+            .map((t) => ({
+              amountPence: t.amount_pence,
+              date: t.date,
+              fromType: t.from_account_id ? (accType.get(t.from_account_id) ?? null) : null,
+              toType: t.to_account_id ? (accType.get(t.to_account_id) ?? null) : null,
+              toDebt: !!t.to_debt_id,
+            })),
+          // Imported transfers between own accounts (outgoing side only, so each counts once).
+          ...txs
+            .filter((t) => t.econ === "transfer" && t.type === "expense" && t.counterpart_account_id && t.account_id && inRange(t.date, a, b))
+            .map((t) => ({
+              amountPence: t.amount_pence,
+              date: t.date,
+              fromType: accType.get(t.account_id!) ?? null,
+              toType: accType.get(t.counterpart_account_id!) ?? null,
+              toDebt: false,
+            })),
+        ],
         accessibleSavingsPence: isCurrent ? accessibleNow : Math.max(0, accessibleNow - accessibleDelta),
         avgDayToDaySpendingPence: avgDayToDay,
       };
