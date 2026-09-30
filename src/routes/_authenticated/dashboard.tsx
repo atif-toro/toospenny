@@ -25,6 +25,7 @@ import {
 import { Button } from "@/components/ui/button";
 import { EmptyState, PageHeader, StatCard } from "@/components/finance-ui";
 import { RouteError, RouteNotFound } from "@/components/route-states";
+import { SpennyScoreCard } from "@/components/spenny-score-card";
 import { getDashboard, listBills } from "@/lib/finance.functions";
 import { formatDate, formatPence, monthLabel } from "@/lib/money";
 
@@ -89,6 +90,8 @@ export function DashboardPage() {
           </Button>
         }
       />
+
+      <SpennyScoreCard />
 
       <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
         <StatCard

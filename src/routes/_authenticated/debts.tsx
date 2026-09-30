@@ -69,6 +69,7 @@ function DebtsPage() {
   const invalidate = () => {
     queryClient.invalidateQueries({ queryKey: ["debts"] });
     queryClient.invalidateQueries({ queryKey: ["dashboard"] });
+    queryClient.invalidateQueries({ queryKey: ["spenny-score"] });
   };
 
   const save = useMutation({

@@ -213,6 +213,7 @@ export function ImportStatementDialog({
       queryClient.invalidateQueries({ queryKey: ["accounts"] });
       queryClient.invalidateQueries({ queryKey: ["categories"] });
       queryClient.invalidateQueries({ queryKey: ["dashboard"] });
+      queryClient.invalidateQueries({ queryKey: ["spenny-score"] });
       queryClient.invalidateQueries({ queryKey: ["budgets"] });
       onImported?.();
       setOpen(false);

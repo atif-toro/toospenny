@@ -114,6 +114,7 @@ function TransactionsPage() {
     queryClient.invalidateQueries({ queryKey: ["transfers"] });
     queryClient.invalidateQueries({ queryKey: ["debts"] });
     queryClient.invalidateQueries({ queryKey: ["dashboard"] });
+    queryClient.invalidateQueries({ queryKey: ["spenny-score"] });
     queryClient.invalidateQueries({ queryKey: ["budgets"] });
     queryClient.invalidateQueries({ queryKey: ["accounts"] });
   };

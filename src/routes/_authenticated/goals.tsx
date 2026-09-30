@@ -50,6 +50,7 @@ function GoalsPage() {
   const invalidate = () => {
     queryClient.invalidateQueries({ queryKey: ["goals"] });
     queryClient.invalidateQueries({ queryKey: ["dashboard"] });
+    queryClient.invalidateQueries({ queryKey: ["spenny-score"] });
   };
 
   const save = useMutation({

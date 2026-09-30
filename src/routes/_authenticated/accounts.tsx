@@ -74,6 +74,7 @@ function AccountsPage() {
   const invalidate = () => {
     queryClient.invalidateQueries({ queryKey: ["accounts"] });
     queryClient.invalidateQueries({ queryKey: ["dashboard"] });
+    queryClient.invalidateQueries({ queryKey: ["spenny-score"] });
   };
 
   const save = useMutation({
