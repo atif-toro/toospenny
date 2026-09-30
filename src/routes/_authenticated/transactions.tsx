@@ -3,6 +3,7 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useEffect, useMemo, useState } from "react";
 import { ArrowLeftRight, Loader2, Plus, Trash2 } from "lucide-react";
 import { toast } from "sonner";
+import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import {
   Dialog,
@@ -24,6 +25,14 @@ import {
 } from "@/components/ui/select";
 import { PageHeader, StatCard } from "@/components/finance-ui";
 import { ImportStatementDialog } from "@/components/import-statement-dialog";
+import {
+  ClassificationBadge,
+  ClassifyDialog,
+  ReviewBanner,
+  ReviewSheet,
+  type ReconcileSummary,
+} from "@/components/transfer-review";
+import type { TransactionRow } from "@/lib/finance.functions";
 import { RouteError, RouteNotFound } from "@/components/route-states";
 import {
   createTransfer,
@@ -62,6 +71,9 @@ function TransactionsPage() {
   const [categoryId, setCategoryId] = useState<string>("all");
   const [search, setSearch] = useState("");
   const [addOpen, setAddOpen] = useState(false);
+  const [reviewOpen, setReviewOpen] = useState(false);
+  const [summary, setSummary] = useState<ReconcileSummary | null>(null);
+  const [classifyTx, setClassifyTx] = useState<TransactionRow | null>(null);
 
   const { data: accounts = [] } = useQuery({ queryKey: ["accounts"], queryFn: () => listAccounts() });
   const { data: categories = [] } = useQuery({
@@ -76,7 +88,7 @@ function TransactionsPage() {
   const filter = useMemo(
     () => ({
       month: month === "all" ? undefined : month,
-      type: type === "all" || type === "transfer" ? undefined : (type as "income" | "expense"),
+      type: undefined,
       categoryId: categoryId === "all" ? undefined : categoryId,
       search: search.trim() || undefined,
       limit: 500,
@@ -88,7 +100,12 @@ function TransactionsPage() {
     queryKey: ["transactions", filter],
     queryFn: () => listTransactions({ data: filter }),
   });
-  const transactions = type === "transfer" ? [] : rawTransactions;
+  const transactions =
+    type === "transfer"
+      ? rawTransactions.filter((t) => t.classification === "transfer" || t.classification === "internal")
+      : type === "review"
+        ? rawTransactions.filter((t) => t.review_status === "needs_review")
+        : rawTransactions;
 
   const { data: rawTransfers = [] } = useQuery({
     queryKey: ["transfers", month],
@@ -137,11 +154,14 @@ function TransactionsPage() {
     onError: (e) => toast.error(e.message),
   });
 
-  const income = transactions
-    .filter((t) => t.type === "income")
+  const income = rawTransactions
+    .filter((t) => t.classification === "income")
     .reduce((s, t) => s + t.amount_pence, 0);
-  const expenses = transactions
-    .filter((t) => t.type === "expense")
+  const expenses = rawTransactions
+    .filter((t) => t.classification === "expense")
+    .reduce((s, t) => s + t.amount_pence, 0);
+  const moved = rawTransactions
+    .filter((t) => (t.classification === "transfer" || t.classification === "internal") && t.type === "expense")
     .reduce((s, t) => s + t.amount_pence, 0);
 
   return (
@@ -151,7 +171,14 @@ function TransactionsPage() {
         description="Every penny in and out."
         action={
           <div className="flex flex-wrap gap-2">
-            <ImportStatementDialog accounts={accounts} categories={categories} />
+            <ImportStatementDialog
+              accounts={accounts}
+              categories={categories}
+              onReconciled={(s) => {
+                setSummary(s);
+                setReviewOpen(true);
+              }}
+            />
             <Button variant="outline" onClick={() => setTransferOpen(true)}>
               <ArrowLeftRight className="mr-2 h-4 w-4" /> Transfer
             </Button>
@@ -164,7 +191,11 @@ function TransactionsPage() {
 
       <div className="grid gap-4 sm:grid-cols-3">
         <StatCard label="Money in" value={formatPence(income)} valueClassName="text-chart-1" />
-        <StatCard label="Money out" value={formatPence(expenses)} />
+        <StatCard
+          label="Money out"
+          value={formatPence(expenses)}
+          hint={moved > 0 ? `${formatPence(moved)} moved between your accounts not counted` : undefined}
+        />
         <StatCard
           label="Net"
           value={formatPence(income - expenses)}
@@ -195,6 +226,7 @@ function TransactionsPage() {
             <SelectItem value="income">Money in</SelectItem>
             <SelectItem value="expense">Money out</SelectItem>
             <SelectItem value="transfer">Transfers</SelectItem>
+            <SelectItem value="review">Needs review</SelectItem>
           </SelectContent>
         </Select>
         <Select value={categoryId} onValueChange={setCategoryId}>
@@ -217,6 +249,8 @@ function TransactionsPage() {
           onChange={(e) => setSearch(e.target.value)}
         />
       </div>
+
+      <ReviewBanner onOpen={() => setReviewOpen(true)} />
 
       <div className="mt-4 overflow-hidden rounded-xl border bg-card shadow-sm">
         {isLoading ? (
@@ -275,12 +309,22 @@ function TransactionsPage() {
                     </td>
                   </tr>
                 ) : (
-                  <tr key={r.tx.id} className="hover:bg-accent/40">
+                  <tr
+                    key={r.tx.id}
+                    className="cursor-pointer hover:bg-accent/40"
+                    onClick={() => setClassifyTx(r.tx)}
+                  >
                     <td className="whitespace-nowrap px-4 py-2.5 text-muted-foreground">
                       {r.tx.date}
                     </td>
                     <td className="max-w-[16rem] truncate px-4 py-2.5 font-medium">
                       {r.tx.note || "—"}
+                      <ClassificationBadge c={r.tx.classification} />
+                      {r.tx.review_status === "needs_review" ? (
+                        <Badge variant="outline" className="ml-2 font-normal">
+                          Check
+                        </Badge>
+                      ) : null}
                     </td>
                     <td className="hidden px-4 py-2.5 text-muted-foreground sm:table-cell">
                       {r.tx.category_name ?? "—"}
@@ -291,7 +335,11 @@ function TransactionsPage() {
                     <td
                       className={
                         "whitespace-nowrap px-4 py-2.5 text-right font-semibold tabular-nums " +
-                        (r.tx.type === "income" ? "text-chart-1" : "")
+                        (r.tx.classification === "income"
+                          ? "text-chart-1"
+                          : r.tx.classification === "expense"
+                            ? ""
+                            : "text-muted-foreground")
                       }
                     >
                       {r.tx.type === "income" ? "+" : "−"}
@@ -303,7 +351,10 @@ function TransactionsPage() {
                         size="icon"
                         className="h-7 w-7 text-muted-foreground hover:text-destructive"
                         aria-label="Delete transaction"
-                        onClick={() => remove.mutate({ data: { id: r.tx.id } })}
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          remove.mutate({ data: { id: r.tx.id } });
+                        }}
                       >
                         <Trash2 className="h-3.5 w-3.5" />
                       </Button>
@@ -316,6 +367,12 @@ function TransactionsPage() {
         )}
       </div>
 
+      <ReviewSheet open={reviewOpen} onOpenChange={setReviewOpen} summary={summary} />
+      <ClassifyDialog
+        tx={classifyTx}
+        accounts={accounts.map((a) => ({ id: a.id, name: a.name }))}
+        onOpenChange={(v) => !v && setClassifyTx(null)}
+      />
       <AddTransactionDialog
         open={addOpen}
         onOpenChange={setAddOpen}
