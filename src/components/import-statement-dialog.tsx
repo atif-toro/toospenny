@@ -288,16 +288,16 @@ export function ImportStatementDialog({
         </div>
 
         <div className="space-y-2">
-          <Label>Statement file (CSV, PDF or photo)</Label>
+          <Label>Statement file (CSV or PDF)</Label>
           <div className="flex items-center gap-3 rounded-lg border border-dashed p-4">
             <Upload className="h-5 w-5 text-muted-foreground" />
             <div className="flex-1 text-sm text-muted-foreground">
-              {fileName || "Upload a CSV, PDF statement or a clear photo of it"}
+              {fileName || "Upload a CSV or PDF statement downloaded from your bank"}
             </div>
             <input
               ref={fileRef}
               type="file"
-              accept=".csv,text/csv,application/pdf,image/png,image/jpeg,image/webp"
+              accept=".csv,text/csv,application/pdf"
               className="hidden"
               onChange={(e) => void onFile(e.target.files?.[0])}
             />
