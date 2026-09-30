@@ -9,3 +9,4 @@
 - [ ] Fix Google consent screen showing old app name "MoneyMap" — rename to Spenny
 - [x] Bank statement CSV import (Monzo, Revolut, NatWest, Lloyds, Halifax, Amex, Capital One + auto-detect)
 - [x] Scan PDF / photo statements with AI into the import review table
+- [x] Spenny Score: dashboard card + details panel, pure scoring module with tests

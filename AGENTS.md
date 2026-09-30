@@ -8,3 +8,4 @@
 > Commits you push to the connected branch sync back to Lovable and show up in
 > the editor, so keep the branch in a working state.
 <!-- LOVABLE:END -->
+- Spenny Score maths lives in the pure module src/lib/spenny-score.ts (SCORE_CONFIG + computeScore/compareScores, vitest-covered); the server fn only gathers inputs — keeps scoring deterministic and testable.
