@@ -90,6 +90,8 @@ export function rowsFromLines(lines: string[]): ParsedRow[] {
       }
     }
     if (!dateText) continue;
+    if (NOISE.test(rest)) continue;
+
 
     const withYear = /\d{4}|\d{2}$/.test(dateText) ? dateText : `${dateText} ${fallbackYear}`;
     const date = normaliseDate(withYear);
