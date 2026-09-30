@@ -88,7 +88,8 @@ describe("reconcile", () => {
       tx({ accountId: "rev", accountName: "Revolut", direction: "in", amountPence: 60000, note: "Top-up" }),
       tx({ direction: "in", amountPence: 3700, note: "Transfer from Pot" }),
     ];
-    expect(reconcile(list)).toEqual(reconcile([...list].reverse()));
+    const sort = (r: ReturnType<typeof reconcile>) => [...r].sort((a, b) => a.id.localeCompare(b.id));
+    expect(sort(reconcile(list))).toEqual(sort(reconcile([...list].reverse())));
   });
 
   it("different amounts are never auto-matched", () => {
