@@ -90,7 +90,15 @@ export function rowsFromLines(lines: string[]): ParsedRow[] {
       }
     }
     if (!dateText) continue;
-    if (NOISE.test(rest)) continue;
+    if (NOISE.test(rest)) {
+      // Seed the running balance from an opening balance line.
+      const opening = rest.match(MONEY);
+      if (opening && opening.length > 0) {
+        const value = parseMoneyCell(opening[opening.length - 1]!.replace(/\s?(CR|DR)$/i, ""));
+        if (value !== null) lastBalance = value;
+      }
+      continue;
+    }
 
 
     const withYear = /\d{4}|\d{2}$/.test(dateText) ? dateText : `${dateText} ${fallbackYear}`;
