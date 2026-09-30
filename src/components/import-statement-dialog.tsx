@@ -37,6 +37,7 @@ import {
   type AccountRow,
   type CategoryRow,
 } from "@/lib/finance.functions";
+import { scanStatement } from "@/lib/statement-scan.functions";
 import { formatDate, formatPence } from "@/lib/money";
 
 type ReviewRow = ParsedRow & {
@@ -165,6 +166,7 @@ export function ImportStatementDialog({
   const onAccountChange = async (value: string) => {
     setAccountId(value);
     if (fileText) await buildRows(fileText, value, bank);
+    else if (rows.length) await applyRows(rows.map(({ date, description, amountPence, type }) => ({ date, description, amountPence, type })), value);
   };
 
   const onBankChange = async (value: BankId | "auto") => {
@@ -240,7 +242,7 @@ export function ImportStatementDialog({
         <DialogHeader>
           <DialogTitle>Import a bank statement</DialogTitle>
           <DialogDescription>
-            Upload a CSV from your bank, check the rows, then add them to Too Spenny.
+            Upload a CSV, PDF or photo of your statement, check the rows, then add them to Too Spenny.
           </DialogDescription>
         </DialogHeader>
 
@@ -280,16 +282,16 @@ export function ImportStatementDialog({
         </div>
 
         <div className="space-y-2">
-          <Label>Statement file (CSV)</Label>
+          <Label>Statement file (CSV, PDF or photo)</Label>
           <div className="flex items-center gap-3 rounded-lg border border-dashed p-4">
             <Upload className="h-5 w-5 text-muted-foreground" />
             <div className="flex-1 text-sm text-muted-foreground">
-              {fileName || "Choose the CSV you downloaded from your bank"}
+              {fileName || "Upload a CSV, PDF statement or a clear photo of it"}
             </div>
             <input
               ref={fileRef}
               type="file"
-              accept=".csv,text/csv"
+              accept=".csv,text/csv,application/pdf,image/png,image/jpeg,image/webp"
               className="hidden"
               onChange={(e) => void onFile(e.target.files?.[0])}
             />
@@ -301,7 +303,7 @@ export function ImportStatementDialog({
 
         {parsing ? (
           <div className="flex items-center gap-2 py-6 text-sm text-muted-foreground">
-            <Loader2 className="h-4 w-4 animate-spin" /> Reading your statement…
+            <Loader2 className="h-4 w-4 animate-spin" /> Reading your statement… (photos and PDFs can take up to a minute)
           </div>
         ) : rows.length > 0 ? (
           <>
