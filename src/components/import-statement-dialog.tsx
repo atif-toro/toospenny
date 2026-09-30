@@ -37,7 +37,7 @@ import {
   type AccountRow,
   type CategoryRow,
 } from "@/lib/finance.functions";
-import { scanStatement } from "@/lib/statement-scan.functions";
+import { parsePdfStatement } from "@/lib/pdf-statement";
 import { formatDate, formatPence } from "@/lib/money";
 
 type ReviewRow = ParsedRow & {
@@ -125,9 +125,16 @@ export function ImportStatementDialog({
   const onFile = async (file: File | undefined) => {
     if (!file) return;
     setFileName(file.name);
-    const mime = file.type || (file.name.toLowerCase().endsWith(".pdf") ? "application/pdf" : "");
-    if (mime === "application/pdf" || mime.startsWith("image/")) {
-      await scanFile(file, mime);
+    const name = file.name.toLowerCase();
+    const isPdf = file.type === "application/pdf" || name.endsWith(".pdf");
+    if (file.type.startsWith("image/") || /\.(png|jpe?g|webp|heic)$/.test(name)) {
+      toast.error(
+        "Photos of statements can't be read. Please download the CSV or PDF statement from your banking app.",
+      );
+      return;
+    }
+    if (isPdf) {
+      await readPdf(file);
       return;
     }
     const text = await file.text();
@@ -135,25 +142,23 @@ export function ImportStatementDialog({
     await buildRows(text, accountId, bank);
   };
 
-  const scanFile = async (file: File, mime: string) => {
-    if (!["application/pdf", "image/png", "image/jpeg", "image/webp"].includes(mime)) {
-      toast.error("Please use a PDF, JPG, PNG or WEBP. iPhone HEIC photos need converting to JPG first.");
-      return;
-    }
-    if (file.size > 10 * 1024 * 1024) {
-      toast.error("That file is over 10MB — try a smaller one.");
+  const readPdf = async (file: File) => {
+    if (file.size > 20 * 1024 * 1024) {
+      toast.error("That file is over 20MB — try a shorter statement.");
       return;
     }
     setParsing(true);
     setFileText("");
     try {
-      const buf = new Uint8Array(await file.arrayBuffer());
-      let bin = "";
-      for (let i = 0; i < buf.length; i += 0x8000) bin += String.fromCharCode(...buf.subarray(i, i + 0x8000));
-      const res = await scanStatement({
-        data: { fileName: file.name, mimeType: mime as "application/pdf", base64: btoa(bin) },
-      });
-      setDetected(res.bank ? `Scanned · ${res.bank}` : "Scanned statement");
+      const res = await parsePdfStatement(await file.arrayBuffer());
+      if (res.imageOnly) {
+        setRows([]);
+        toast.error(
+          "That PDF is a scan or photo with no readable text. Please download the CSV or original PDF from your banking app.",
+        );
+        return;
+      }
+      setDetected("PDF statement · read on your device");
       setSkipped(0);
       await applyRows(res.rows, accountId);
     } catch (e) {
@@ -242,7 +247,8 @@ export function ImportStatementDialog({
         <DialogHeader>
           <DialogTitle>Import a bank statement</DialogTitle>
           <DialogDescription>
-            Upload a CSV, PDF or photo of your statement, check the rows, then add them to Too Spenny.
+            Upload a CSV or PDF statement from your bank. It is read on your device, check the rows,
+            then add them to Too Spenny.
           </DialogDescription>
         </DialogHeader>
 
@@ -282,16 +288,16 @@ export function ImportStatementDialog({
         </div>
 
         <div className="space-y-2">
-          <Label>Statement file (CSV, PDF or photo)</Label>
+          <Label>Statement file (CSV or PDF)</Label>
           <div className="flex items-center gap-3 rounded-lg border border-dashed p-4">
             <Upload className="h-5 w-5 text-muted-foreground" />
             <div className="flex-1 text-sm text-muted-foreground">
-              {fileName || "Upload a CSV, PDF statement or a clear photo of it"}
+              {fileName || "Upload a CSV or PDF statement downloaded from your bank"}
             </div>
             <input
               ref={fileRef}
               type="file"
-              accept=".csv,text/csv,application/pdf,image/png,image/jpeg,image/webp"
+              accept=".csv,text/csv,application/pdf"
               className="hidden"
               onChange={(e) => void onFile(e.target.files?.[0])}
             />
@@ -303,7 +309,7 @@ export function ImportStatementDialog({
 
         {parsing ? (
           <div className="flex items-center gap-2 py-6 text-sm text-muted-foreground">
-            <Loader2 className="h-4 w-4 animate-spin" /> Reading your statement… (photos and PDFs can take up to a minute)
+            <Loader2 className="h-4 w-4 animate-spin" /> Reading your statement on this device…
           </div>
         ) : rows.length > 0 ? (
           <>

@@ -497,15 +497,18 @@ const CATEGORY_KEYWORDS: { category: string; words: string[] }[] = [
 
 /** Best-guess category name for a statement description, or null. */
 export function guessCategory(description: string, type: "income" | "expense"): string | null {
-  const text = ` ${description.toLowerCase()} `;
+  const text = description.toLowerCase();
+  // Whole-word match so e.g. "netflix" is not read as the "tfl" travel keyword.
+  const hasWord = (word: string) =>
+    new RegExp(`(^|[^a-z0-9])${word.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}([^a-z0-9]|$)`, "i").test(text);
   if (type === "income") {
     const hit = CATEGORY_KEYWORDS.find((c) => c.category === "Income");
-    if (hit && hit.words.some((w) => text.includes(w))) return "Income";
+    if (hit && hit.words.some(hasWord)) return "Income";
     return null;
   }
   for (const entry of CATEGORY_KEYWORDS) {
     if (entry.category === "Income") continue;
-    if (entry.words.some((w) => text.includes(w))) return entry.category;
+    if (entry.words.some(hasWord)) return entry.category;
   }
   return null;
 }
