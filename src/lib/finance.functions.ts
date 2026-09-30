@@ -1137,10 +1137,16 @@ export const listBills = createServerFn({ method: "GET" })
     ]);
     if (error) throw new Error(error.message);
     if (payError) throw new Error(payError.message);
+    return buildBillRows(bills ?? [], payments ?? []);
+  });
 
+function buildBillRows(
+  bills: unknown[],
+  payments: { bill_id: string; period: string; paid_on: string }[],
+): BillRow[] {
     const paidByBill = new Map<string, Set<string>>();
     const lastPaid = new Map<string, string>();
-    for (const p of payments ?? []) {
+    for (const p of payments) {
       const set = paidByBill.get(p.bill_id) ?? new Set<string>();
       set.add(p.period);
       paidByBill.set(p.bill_id, set);
@@ -1151,7 +1157,7 @@ export const listBills = createServerFn({ method: "GET" })
     const today = utcTodayISO();
     const monthStartISO = today.slice(0, 7) + "-01";
 
-    return (bills ?? []).map((r) => {
+    return bills.map((r) => {
       const row = r as Record<string, unknown>;
       const id = row["id"] as string;
       const cadence = row["cadence"] as Cadence;
@@ -1209,7 +1215,7 @@ export const listBills = createServerFn({ method: "GET" })
         monthly_cost_pence: monthlyCostPence(amount, cadence),
       } satisfies BillRow;
     });
-  });
+}
 
 export const saveBill = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
