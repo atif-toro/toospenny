@@ -194,7 +194,7 @@ function TransactionsPage() {
         <StatCard
           label="Money out"
           value={formatPence(expenses)}
-          hint={moved > 0 ? `${formatPence(moved)} moved between your accounts not counted` : undefined}
+          sub={moved > 0 ? `${formatPence(moved)} moved between your accounts not counted` : undefined}
         />
         <StatCard
           label="Net"

@@ -33,6 +33,7 @@ import {
 } from "@/lib/bank-parsers";
 import {
   importTransactions,
+  reconcileTransactions,
   listExistingForImport,
   type AccountRow,
   type CategoryRow,
@@ -51,10 +52,12 @@ export function ImportStatementDialog({
   accounts,
   categories,
   onImported,
+  onReconciled,
 }: {
   accounts: AccountRow[];
   categories: CategoryRow[];
   onImported?: () => void;
+  onReconciled?: (summary: Awaited<ReturnType<typeof reconcileTransactions>>) => void;
 }) {
   const queryClient = useQueryClient();
   const fileRef = useRef<HTMLInputElement>(null);
@@ -193,8 +196,8 @@ export function ImportStatementDialog({
   };
 
   const runImport = useMutation({
-    mutationFn: async () =>
-      importTransactions({
+    mutationFn: async () => {
+      const res = await importTransactions({
         data: {
           accountId,
           rows: selected.map((r) => ({
@@ -206,9 +209,17 @@ export function ImportStatementDialog({
             category_name: r.categoryName,
           })),
         },
-      }),
+      });
+      // Check every account for transfers, pot movements and duplicates.
+      const summary = await reconcileTransactions();
+      return { ...res, summary };
+    },
     onSuccess: (res) => {
-      toast.success(`Imported ${res.imported} transactions`);
+      toast.success(
+        `Imported ${res.imported} transactions${res.summary.needsReview ? ` · ${res.summary.needsReview} to review` : ""}`,
+      );
+      queryClient.invalidateQueries({ queryKey: ["review-items"] });
+      onReconciled?.(res.summary);
       queryClient.invalidateQueries({ queryKey: ["transactions"] });
       queryClient.invalidateQueries({ queryKey: ["accounts"] });
       queryClient.invalidateQueries({ queryKey: ["categories"] });
@@ -249,7 +260,8 @@ export function ImportStatementDialog({
           <DialogTitle>Import a bank statement</DialogTitle>
           <DialogDescription>
             Upload a CSV or PDF statement from your bank. It is read on your device, check the rows,
-            then add them to Too Spenny.
+            then add them. Too Spenny then spots transfers between your accounts so they don't
+            count as income or spending.
           </DialogDescription>
         </DialogHeader>
 
