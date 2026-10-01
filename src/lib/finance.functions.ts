@@ -3,6 +3,7 @@ import { z } from "zod";
 import { requireSupabaseAuth } from "@/integrations/supabase/auth-middleware";
 import {
   daysUntil,
+  matchBills,
   monthlyCostPence,
   periodKey,
   upcomingDueDates,
@@ -1615,7 +1616,7 @@ async function loadAllTransactions(supabase: { from: (t: string) => any }, userI
  */
 export const reconcileTransactions = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
-  .handler(async ({ context }): Promise<RecSummary & { changed: number; total: number }> => {
+  .handler(async ({ context }): Promise<RecSummary & { changed: number; total: number; billsPaid: number }> => {
     const { supabase, userId } = context;
     const rows = await loadAllTransactions(supabase, userId);
     const recTxs: RecTx[] = rows.map((r) => {
@@ -1645,7 +1646,7 @@ export const reconcileTransactions = createServerFn({ method: "POST" })
           counterpart_account_id: res.counterpartAccountId,
           duplicate_of: res.duplicateOf,
           review_status: res.needsReview ? "needs_review" : "none",
-          reasons: res.reasons,
+          reasons: [...res.reasons, ...(Array.isArray(prev["reasons"]) ? (prev["reasons"] as string[]) : []).filter((x) => x.startsWith("Paid ") || x.startsWith("Matched \""))],
           suggestion: res.suggestion,
         };
         const same = (Object.keys(next) as (keyof typeof next)[]).every(
@@ -1663,7 +1664,37 @@ export const reconcileTransactions = createServerFn({ method: "POST" })
         }),
       );
     }
-    return { ...summarise(recTxs, results), changed: updates.length, total: rows.length };
+
+    // Link imported payments to Outgoings so bills are marked paid by the real transaction.
+    const [{ data: bills, error: bErr }, { data: pays, error: pErr }] = await Promise.all([
+      supabase.from("bills").select("id, name, amount_pence, cadence, due_day, account_id, created_at").eq("user_id", userId).eq("active", true),
+      supabase.from("bill_payments").select("bill_id, period, transaction_id").eq("user_id", userId),
+    ]);
+    if (bErr) throw new Error(bErr.message);
+    if (pErr) throw new Error(pErr.message);
+    const finalClass = new Map(results.map((r) => [r.id, r.classification]));
+    const expenseTxs = rows
+      .filter((r) => r["type"] === "expense" && (finalClass.get(r["id"] as string) ?? r["classification"]) === "expense" && !r["duplicate_of"])
+      .map((r) => ({ id: r["id"] as string, date: r["date"] as string, amountPence: Number(r["amount_pence"]), description: (r["note"] as string | null) ?? "", accountId: r["account_id"] as string | null }));
+    const matches = matchBills(
+      (bills ?? []).map((b) => ({ id: b.id, name: b.name, amountPence: Number(b.amount_pence), cadence: b.cadence as Cadence, dueDay: b.due_day, accountId: b.account_id, createdAt: b.created_at })),
+      expenseTxs,
+      new Set((pays ?? []).map((p) => `${p.bill_id}|${p.period}`)),
+      new Set((pays ?? []).map((p) => p.transaction_id).filter((x): x is string => !!x)),
+    );
+    const billName = new Map((bills ?? []).map((b) => [b.id, b.name]));
+    for (const m of matches) {
+      const { error } = await supabase.from("bill_payments").insert({ user_id: userId, bill_id: m.billId, period: m.period, amount_pence: m.amountPence, paid_on: m.date, transaction_id: m.txId });
+      if (error) throw new Error(error.message);
+      const prev = byId.get(m.txId);
+      const prevReasons = Array.isArray(prev?.["reasons"]) ? (prev!["reasons"] as string[]) : [];
+      await supabase
+        .from("transactions")
+        .update({ reasons: [...prevReasons.filter((r) => !r.startsWith("Paid ")), `Paid ${billName.get(m.billId)} for ${m.period}`, m.reason] })
+        .eq("id", m.txId)
+        .eq("user_id", userId);
+    }
+    return { ...summarise(recTxs, results), changed: updates.length + matches.length, total: rows.length, billsPaid: matches.length };
   });
 
 export const listReviewItems = createServerFn({ method: "GET" })

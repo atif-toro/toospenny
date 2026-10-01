@@ -69,15 +69,63 @@ function yearFromLines(lines: string[]): number {
   return new Date().getFullYear();
 }
 
-/** Turn statement text lines into transaction rows. */
+/** Bank-internal reference tokens (e.g. "35123213787726000N", "FP 12345678"). */
+const REFERENCE_TOKEN = /^(?:[A-Z]{0,3}\d[\dA-Z]{9,}|\d{6,})$/i;
+
+/** Split a description into human-readable words and bank reference codes. */
+export function splitReference(text: string): { words: string; reference: string } {
+  const words: string[] = [];
+  const refs: string[] = [];
+  for (const tok of text.split(/\s+/).filter(Boolean)) {
+    if (REFERENCE_TOKEN.test(tok)) refs.push(tok);
+    else words.push(tok);
+  }
+  const w = words.join(" ").trim();
+  // A lone leading number like "10" left over from a reference is not a description.
+  return { words: /^[\d\s.,-]*$/.test(w) ? "" : w, reference: refs.join(" ") };
+}
+
+type Pending = {
+  date: string;
+  amountPence: number;
+  type: "income" | "expense";
+  words: string[];
+  refs: string[];
+};
+
+function finish(p: Pending): ParsedRow {
+  const description = p.words.join(" ").replace(/\s{2,}/g, " ").replace(/[|·]+/g, " ").trim() || p.refs.join(" ") || "Transaction";
+  const row: ParsedRow = { date: p.date, description: description.slice(0, 300), amountPence: p.amountPence, type: p.type };
+  if (p.refs.length) row.reference = p.refs.join(" ").slice(0, 120);
+  return row;
+}
+
+/**
+ * Turn statement text lines into transaction rows.
+ *
+ * Many banks (NatWest, Lloyds, Barclays…) print a transaction across several
+ * lines: the date/amount/reference on one, the payee on the next. Lines with
+ * no money are stitched onto the transaction above them; lines with money but
+ * no date reuse the last seen date (banks print the date once per day).
+ */
 export function rowsFromLines(lines: string[]): ParsedRow[] {
   const fallbackYear = yearFromLines(lines);
   const rows: ParsedRow[] = [];
   let lastBalance: number | null = null;
+  let lastDate: string | null = null;
+  let pending: Pending | null = null;
+  const flush = () => {
+    if (pending) rows.push(finish(pending));
+    pending = null;
+  };
 
   for (const raw of lines) {
     const line = raw.trim();
-    if (!line || NOISE.test(line)) continue;
+    if (!line) continue;
+    if (NOISE.test(line)) {
+      flush();
+      continue;
+    }
 
     let dateText: string | null = null;
     let rest = line;
@@ -89,57 +137,64 @@ export function rowsFromLines(lines: string[]): ParsedRow[] {
         break;
       }
     }
-    if (!dateText) continue;
-    if (NOISE.test(rest)) {
-      // Seed the running balance from an opening balance line.
+
+    if (dateText && NOISE.test(rest)) {
+      flush();
       const opening = rest.match(MONEY);
       if (opening && opening.length > 0) {
         const value = parseMoneyCell(opening[opening.length - 1]!.replace(/\s?(CR|DR)$/i, ""));
         if (value !== null) lastBalance = value;
       }
+      if (dateText) {
+        const d = normaliseDate(/\d{4}|\d{2}$/.test(dateText) ? dateText : `${dateText} ${fallbackYear}`);
+        if (d) lastDate = d;
+      }
       continue;
     }
 
-
-    const withYear = /\d{4}|\d{2}$/.test(dateText) ? dateText : `${dateText} ${fallbackYear}`;
-    const date = normaliseDate(withYear);
-    if (!date) continue;
+    let date: string | null = null;
+    if (dateText) {
+      date = normaliseDate(/\d{4}|\d{2}$/.test(dateText) ? dateText : `${dateText} ${fallbackYear}`);
+      if (date) lastDate = date;
+    }
 
     const money = rest.match(MONEY);
-    if (!money || money.length === 0) continue;
+    if (!money || money.length === 0) {
+      // Continuation line: payee / memo for the transaction above.
+      if (pending) {
+        const { words, reference } = splitReference(rest);
+        if (words) pending.words.push(words);
+        if (reference) pending.refs.push(reference);
+      }
+      continue;
+    }
 
-    // Last money token on a statement line is usually the running balance.
+    const txDate = date ?? lastDate;
+    if (!txDate) continue;
+
     const hasBalance = money.length >= 2;
     const amountToken = hasBalance ? money[money.length - 2]! : money[money.length - 1]!;
     const balanceToken = hasBalance ? money[money.length - 1]! : null;
-
     const amountPence = parseMoneyCell(amountToken.replace(/\s?(CR|DR)$/i, ""));
     if (amountPence === null || amountPence === 0) continue;
-
     const balance = balanceToken ? parseMoneyCell(balanceToken.replace(/\s?(CR|DR)$/i, "")) : null;
 
+    let text = rest;
+    for (const token of money) text = text.replace(token, " ");
+    const { words, reference } = splitReference(text);
+
     let type: "income" | "expense";
-    if (amountPence < 0 || /DR$/i.test(amountToken.trim())) {
-      type = "expense";
-    } else if (/CR$/i.test(amountToken.trim())) {
-      type = "income";
-    } else if (balance !== null && lastBalance !== null && balance !== lastBalance) {
-      type = balance > lastBalance ? "income" : "expense";
-    } else if (/\b(salary|wages|refund|received|credit|transfer in|interest|cashback|payment in|deposit)\b/i.test(rest)) {
-      type = "income";
-    } else {
-      type = "expense";
-    }
+    if (amountPence < 0 || /DR$/i.test(amountToken.trim())) type = "expense";
+    else if (/CR$/i.test(amountToken.trim())) type = "income";
+    else if (balance !== null && lastBalance !== null && balance !== lastBalance) type = balance > lastBalance ? "income" : "expense";
+    else if (/\b(salary|wages|refund|received|credit|transfer in|interest|cashback|payment in|deposit)\b/i.test(words)) type = "income";
+    else type = "expense";
     if (balance !== null) lastBalance = balance;
 
-    let description = rest;
-    for (const token of money) description = description.replace(token, " ");
-    description = description.replace(/\s{2,}/g, " ").replace(/[|·]+/g, " ").trim();
-    if (!description) description = "Transaction";
-
-    rows.push({ date, description: description.slice(0, 300), amountPence: Math.abs(amountPence), type });
+    flush();
+    pending = { date: txDate, amountPence: Math.abs(amountPence), type, words: words ? [words] : [], refs: reference ? [reference] : [] };
   }
-
+  flush();
   return rows;
 }
 

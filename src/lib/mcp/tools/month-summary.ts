@@ -9,7 +9,8 @@ export default defineTool({
   inputSchema: { month: z.string().regex(/^\d{4}-\d{2}$/).describe("Month as YYYY-MM.") },
   annotations: { readOnlyHint: true, idempotentHint: true, openWorldHint: false },
   handler: async ({ month }, ctx) => {
-    const [y, m] = month.split("-").map(Number);
+    const y = Number(month.slice(0, 4));
+    const m = Number(month.slice(5, 7));
     const end = new Date(Date.UTC(y, m, 0)).toISOString().slice(0, 10);
     const { data, error } = await supabaseForUser(ctx)
       .from("transactions")
