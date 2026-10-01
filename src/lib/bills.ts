@@ -76,3 +76,96 @@ export function daysUntil(iso: string, fromISO: string): number {
   const b = Date.parse(fromISO + "T00:00:00Z");
   return Math.round((a - b) / 86400000);
 }
+
+/* --------------------- Statement → Outgoings matching --------------------- */
+
+export const BILL_MATCH = {
+  /** Allowed amount difference: the larger of 10% or £2. */
+  amountTolerance: 0.1,
+  amountFloorPence: 200,
+  /** Days either side of the expected due date. */
+  dateWindowDays: 10,
+} as const;
+
+const PAYMENT_PREFIX =
+  /\b(direct debit|dd|d\/d|card (transaction|payment|purchase)|pos|contactless|standing order|so|bill payment|bp|payment to|recurring|subscription|visa|debit)\b/g;
+const NAME_NOISE = new Set(["plan", "family", "mobile", "subscription", "the", "ltd", "limited", "uk", "gb", "plc", "co", "com", "london", "membership", "monthly", "bill", "payment"]);
+
+function tokens(s: string, drop: Set<string>): string[] {
+  return s
+    .toLowerCase()
+    .replace(PAYMENT_PREFIX, " ")
+    .replace(/[^a-z0-9]+/g, " ")
+    .split(" ")
+    .filter((t) => t && !drop.has(t) && !/^\d{3,}$/.test(t));
+}
+
+/** True when the statement description names the bill (O2 ↔ "DIRECT DEBIT O2", "GOOGLE*ONE"). */
+export function payeeMatches(description: string, billName: string): boolean {
+  const desc = tokens(description, new Set());
+  const descJoined = desc.join("");
+  const name = tokens(billName, NAME_NOISE);
+  if (!name.length) return false;
+  // Every meaningful bill word appears as a token, or the joined name appears ("googleone").
+  if (name.every((w) => desc.includes(w))) return true;
+  const joined = name.join("");
+  return joined.length >= 4 && descJoined.includes(joined);
+}
+
+export function amountClose(actual: number, expected: number): boolean {
+  const tol = Math.max(BILL_MATCH.amountFloorPence, Math.round(expected * BILL_MATCH.amountTolerance));
+  return Math.abs(actual - expected) <= tol;
+}
+
+export type BillMatchBill = { id: string; name: string; amountPence: number; cadence: Cadence; dueDay: number; accountId: string | null; createdAt: string };
+export type BillMatchTx = { id: string; date: string; amountPence: number; description: string; accountId: string | null };
+export type BillMatch = { billId: string; txId: string; period: string; amountPence: number; date: string; reason: string };
+
+/**
+ * Pair expense transactions with Outgoings. One payment per bill per period,
+ * one bill per transaction; closest date wins. Already-paid periods and
+ * already-linked transactions are skipped, so re-running is a no-op.
+ */
+export function matchBills(
+  bills: BillMatchBill[],
+  txs: BillMatchTx[],
+  paidPeriods: Set<string>,
+  linkedTxIds: Set<string>,
+): BillMatch[] {
+  const cands: (BillMatch & { gap: number })[] = [];
+  for (const b of bills) {
+    for (const t of txs) {
+      if (linkedTxIds.has(t.id)) continue;
+      if (b.accountId && t.accountId && b.accountId !== t.accountId) continue;
+      if (!payeeMatches(t.description, b.name) || !amountClose(t.amountPence, b.amountPence)) continue;
+      const start = new Date(Date.parse(t.date + "T00:00:00Z") - 40 * 86400000).toISOString().slice(0, 10);
+      const dues = upcomingDueDates(b.cadence, b.dueDay, start, start, 4);
+      let best: string | null = null;
+      let gap = Infinity;
+      for (const d of dues) {
+        const g = Math.abs(Date.parse(d) - Date.parse(t.date)) / 86400000;
+        if (g < gap) { gap = g; best = d; }
+      }
+      if (!best || gap > BILL_MATCH.dateWindowDays) continue;
+      const period = periodKey(b.cadence, best);
+      if (paidPeriods.has(`${b.id}|${period}`)) continue;
+      cands.push({
+        billId: b.id, txId: t.id, period, amountPence: t.amountPence, date: t.date, gap,
+        reason: `Matched "${t.description}" to ${b.name} — similar name, ${(t.amountPence / 100).toFixed(2)} vs expected ${(b.amountPence / 100).toFixed(2)}, ${Math.round(gap)} day(s) from the due date`,
+      });
+    }
+  }
+  cands.sort((a, b) => a.gap - b.gap);
+  const usedTx = new Set<string>();
+  const usedPeriod = new Set<string>();
+  const out: BillMatch[] = [];
+  for (const c of cands) {
+    const k = `${c.billId}|${c.period}`;
+    if (usedTx.has(c.txId) || usedPeriod.has(k)) continue;
+    usedTx.add(c.txId);
+    usedPeriod.add(k);
+    const { gap: _g, ...m } = c;
+    out.push(m);
+  }
+  return out;
+}
