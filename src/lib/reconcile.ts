@@ -328,6 +328,36 @@ export function reconcile(all: RecTx[]): RecResult[] {
     });
     taken.add(t.id);
   }
+  // 4b. One-sided transfer: the payee names another account you own
+  // ("Transfer to Monzo", "To Revolut") and the other statement isn't imported yet.
+  const accounts = new Map<string, string>();
+  for (const a of ownAccounts) accounts.set(a.id, a.name);
+  for (const t of all) if (t.accountId && t.accountName) accounts.set(t.accountId, t.accountName);
+  for (const t of open) {
+    if (taken.has(t.id)) continue;
+    const r = get(t.id);
+    if (r.suggestion || r.classification === "internal") continue;
+    const other = [...accounts].find(([id, name]) => id !== t.accountId && mentionsAccount(t.note, name));
+    if (!other) continue;
+    const strong = TRANSFER_WORDS.test(t.note);
+    const reasons = [
+      `"${t.note}" names ${other[1]}, another account you own`,
+      strong ? "Description says it's a transfer" : "Description doesn't clearly say transfer",
+      "Waiting for the matching side when you import that account's statement",
+    ];
+    if (strong) {
+      Object.assign(r, { classification: "transfer", confidence: "high", counterpartAccountId: other[0], reasons: [...reasons, "Excluded from income and spending"] });
+    } else {
+      Object.assign(r, {
+        confidence: "medium",
+        needsReview: true,
+        reasons: [...reasons, "Not changed until you confirm"],
+        suggestion: { classification: "transfer", confidence: "medium", kind: "transfer", counterpartAccountId: other[0] },
+      });
+    }
+    taken.add(t.id);
+  }
+
   // Weak pot words ("Deposit") with no partner — ask, don't assume income.
   for (const t of open) {
     if (taken.has(t.id) || !WEAK_INTERNAL.test(t.note)) continue;
