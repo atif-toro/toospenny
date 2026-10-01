@@ -1,7 +1,7 @@
 import { Button } from "@/components/ui/button";
-import { Link } from "@tanstack/react-router";
+import { Link, type ErrorComponentProps } from "@tanstack/react-router";
 
-export function RouteError({ error }: { error?: Error | null }) {
+export function RouteError({ error }: ErrorComponentProps) {
   return (
     <div className="rounded-xl border border-destructive/30 bg-destructive/5 px-6 py-10 text-center">
       <h2 className="font-display text-xl font-semibold">Something went wrong</h2>
