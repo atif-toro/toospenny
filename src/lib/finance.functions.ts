@@ -1616,7 +1616,7 @@ async function loadAllTransactions(supabase: { from: (t: string) => any }, userI
  */
 export const reconcileTransactions = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
-  .handler(async ({ context }): Promise<RecSummary & { changed: number; total: number }> => {
+  .handler(async ({ context }): Promise<RecSummary & { changed: number; total: number; billsPaid: number }> => {
     const { supabase, userId } = context;
     const rows = await loadAllTransactions(supabase, userId);
     const recTxs: RecTx[] = rows.map((r) => {
