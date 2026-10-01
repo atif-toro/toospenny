@@ -1645,7 +1645,7 @@ export const reconcileTransactions = createServerFn({ method: "POST" })
           counterpart_account_id: res.counterpartAccountId,
           duplicate_of: res.duplicateOf,
           review_status: res.needsReview ? "needs_review" : "none",
-          reasons: res.reasons,
+          reasons: [...res.reasons, ...(Array.isArray(prev["reasons"]) ? (prev["reasons"] as string[]) : []).filter((x) => x.startsWith("Paid ") || x.startsWith("Matched \""))],
           suggestion: res.suggestion,
         };
         const same = (Object.keys(next) as (keyof typeof next)[]).every(
