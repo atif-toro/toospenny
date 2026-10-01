@@ -13,6 +13,8 @@ export type ParsedRow = {
   /** Positive pence value */
   amountPence: number;
   type: "income" | "expense";
+  /** Bank-internal reference code kept apart from the payee description. */
+  reference?: string;
 };
 
 export type BankId =
