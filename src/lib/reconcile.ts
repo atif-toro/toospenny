@@ -171,7 +171,7 @@ function baseResult(t: RecTx): RecResult {
  * Classify a set of transactions across all of a user's accounts.
  * Locked (user-set) rows are returned untouched and never used as a match.
  */
-export function reconcile(all: RecTx[]): RecResult[] {
+export function reconcile(all: RecTx[], ownAccounts: { id: string; name: string }[] = []): RecResult[] {
   const results = new Map<string, RecResult>();
   const open = all.filter((t) => !t.locked);
   for (const t of open) results.set(t.id, baseResult(t));
