@@ -139,7 +139,7 @@ export function matchBills(
       if (b.accountId && t.accountId && b.accountId !== t.accountId) continue;
       if (!payeeMatches(t.description, b.name) || !amountClose(t.amountPence, b.amountPence)) continue;
       const start = new Date(Date.parse(t.date + "T00:00:00Z") - 40 * 86400000).toISOString().slice(0, 10);
-      const dues = upcomingDueDates(b.cadence, b.dueDay, start, start, 4);
+      const dues = upcomingDueDates(b.cadence, b.dueDay, b.createdAt.slice(0, 10), start, 4);
       let best: string | null = null;
       let gap = Infinity;
       for (const d of dues) {
