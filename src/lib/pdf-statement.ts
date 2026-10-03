@@ -118,6 +118,7 @@ export function rowsFromLines(lines: string[]): ParsedRow[] {
   // Banks often print the running balance only on the last line of each day, so the
   // direction of every row in the group is solved together against that balance.
   let unsettled: Pending[] = [];
+  let explicit = 0;
   const flush = () => {
     if (pending) all.push(pending);
     pending = null;
