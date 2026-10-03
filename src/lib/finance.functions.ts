@@ -1633,7 +1633,10 @@ export const reconcileTransactions = createServerFn({ method: "POST" })
         locked: r["classification_source"] === "user",
       };
     });
-    const results = reconcile(recTxs);
+    // Every account the user owns, so "Transfer to Monzo" is recognised before Monzo's statement is imported.
+    const { data: ownAccs, error: aErr } = await supabase.from("accounts").select("id, name").eq("user_id", userId);
+    if (aErr) throw new Error(aErr.message);
+    const results = reconcile(recTxs, (ownAccs ?? []).map((a) => ({ id: a.id, name: a.name })));
     const byId = new Map(rows.map((r) => [r["id"] as string, r]));
     const now = new Date().toISOString();
     const updates = results
@@ -1668,7 +1671,7 @@ export const reconcileTransactions = createServerFn({ method: "POST" })
     // Link imported payments to Outgoings so bills are marked paid by the real transaction.
     const [{ data: bills, error: bErr }, { data: pays, error: pErr }] = await Promise.all([
       supabase.from("bills").select("id, name, amount_pence, cadence, due_day, account_id, created_at").eq("user_id", userId).eq("active", true),
-      supabase.from("bill_payments").select("bill_id, period, transaction_id").eq("user_id", userId),
+      supabase.from("bill_payments").select("id, bill_id, period, transaction_id").eq("user_id", userId),
     ]);
     if (bErr) throw new Error(bErr.message);
     if (pErr) throw new Error(pErr.message);
@@ -1676,15 +1679,24 @@ export const reconcileTransactions = createServerFn({ method: "POST" })
     const expenseTxs = rows
       .filter((r) => r["type"] === "expense" && (finalClass.get(r["id"] as string) ?? r["classification"]) === "expense" && !r["duplicate_of"])
       .map((r) => ({ id: r["id"] as string, date: r["date"] as string, amountPence: Number(r["amount_pence"]), description: (r["note"] as string | null) ?? "", accountId: r["account_id"] as string | null }));
+    // Manually ticked "paid" placeholders (no transaction) get upgraded to the real
+    // statement payment instead of blocking the match.
+    const placeholders = new Map(
+      (pays ?? []).filter((p) => !p.transaction_id).map((p) => [`${p.bill_id}|${p.period}`, p.id as string]),
+    );
     const matches = matchBills(
       (bills ?? []).map((b) => ({ id: b.id, name: b.name, amountPence: Number(b.amount_pence), cadence: b.cadence as Cadence, dueDay: b.due_day, accountId: b.account_id, createdAt: b.created_at })),
       expenseTxs,
-      new Set((pays ?? []).map((p) => `${p.bill_id}|${p.period}`)),
+      new Set((pays ?? []).filter((p) => p.transaction_id).map((p) => `${p.bill_id}|${p.period}`)),
       new Set((pays ?? []).map((p) => p.transaction_id).filter((x): x is string => !!x)),
     );
     const billName = new Map((bills ?? []).map((b) => [b.id, b.name]));
     for (const m of matches) {
-      const { error } = await supabase.from("bill_payments").insert({ user_id: userId, bill_id: m.billId, period: m.period, amount_pence: m.amountPence, paid_on: m.date, transaction_id: m.txId });
+      const placeholderId = placeholders.get(`${m.billId}|${m.period}`);
+      const payment = { amount_pence: m.amountPence, paid_on: m.date, transaction_id: m.txId };
+      const { error } = placeholderId
+        ? await supabase.from("bill_payments").update(payment).eq("id", placeholderId).eq("user_id", userId)
+        : await supabase.from("bill_payments").insert({ user_id: userId, bill_id: m.billId, period: m.period, ...payment });
       if (error) throw new Error(error.message);
       const prev = byId.get(m.txId);
       const prevReasons = Array.isArray(prev?.["reasons"]) ? (prev!["reasons"] as string[]) : [];

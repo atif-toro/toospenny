@@ -110,13 +110,36 @@ function finish(p: Pending): ParsedRow {
  */
 export function rowsFromLines(lines: string[]): ParsedRow[] {
   const fallbackYear = yearFromLines(lines);
-  const rows: ParsedRow[] = [];
+  const all: Pending[] = [];
   let lastBalance: number | null = null;
   let lastDate: string | null = null;
   let pending: Pending | null = null;
+  // Rows since the last printed balance whose direction wasn't explicit (no CR/DR).
+  // Banks often print the running balance only on the last line of each day, so the
+  // direction of every row in the group is solved together against that balance.
+  let unsettled: Pending[] = [];
+  let explicit = 0;
   const flush = () => {
-    if (pending) rows.push(finish(pending));
+    if (pending) all.push(pending);
     pending = null;
+  };
+  const settle = (balance: number, explicitDelta: number) => {
+    if (lastBalance === null || unsettled.length === 0 || unsettled.length > 14) return;
+    const target = balance - lastBalance - explicitDelta;
+    let best: number | null = null;
+    let bestMiss = Infinity;
+    for (let mask = 0; mask < 1 << unsettled.length; mask++) {
+      let sum = 0;
+      let miss = 0;
+      unsettled.forEach((p, i) => {
+        const incoming = (mask >> i) & 1;
+        sum += incoming ? p.amountPence : -p.amountPence;
+        if ((incoming ? "income" : "expense") !== p.type) miss++;
+      });
+      if (sum === target && miss < bestMiss) { best = mask; bestMiss = miss; }
+    }
+    if (best === null) return;
+    unsettled.forEach((p, i) => { p.type = ((best! >> i) & 1) ? "income" : "expense"; });
   };
 
   for (const raw of lines) {
@@ -143,12 +166,10 @@ export function rowsFromLines(lines: string[]): ParsedRow[] {
       const opening = rest.match(MONEY);
       if (opening && opening.length > 0) {
         const value = parseMoneyCell(opening[opening.length - 1]!.replace(/\s?(CR|DR)$/i, ""));
-        if (value !== null) lastBalance = value;
+        if (value !== null) { lastBalance = value; unsettled = []; explicit = 0; }
       }
-      if (dateText) {
-        const d = normaliseDate(/\d{4}|\d{2}$/.test(dateText) ? dateText : `${dateText} ${fallbackYear}`);
-        if (d) lastDate = d;
-      }
+      const d = normaliseDate(/\d{4}|\d{2}$/.test(dateText) ? dateText : `${dateText} ${fallbackYear}`);
+      if (d) lastDate = d;
       continue;
     }
 
@@ -184,18 +205,27 @@ export function rowsFromLines(lines: string[]): ParsedRow[] {
     const { words, reference } = splitReference(text);
 
     let type: "income" | "expense";
+    let isExplicit = true;
     if (amountPence < 0 || /DR$/i.test(amountToken.trim())) type = "expense";
     else if (/CR$/i.test(amountToken.trim())) type = "income";
-    else if (balance !== null && lastBalance !== null && balance !== lastBalance) type = balance > lastBalance ? "income" : "expense";
-    else if (/\b(salary|wages|refund|received|credit|transfer in|interest|cashback|payment in|deposit)\b/i.test(words)) type = "income";
-    else type = "expense";
-    if (balance !== null) lastBalance = balance;
+    else {
+      isExplicit = false;
+      type = /\b(salary|wages|refund|received|credit|transfer in|interest|cashback|payment in|deposit)\b/i.test(words) ? "income" : "expense";
+    }
 
     flush();
     pending = { date: txDate, amountPence: Math.abs(amountPence), type, words: words ? [words] : [], refs: reference ? [reference] : [] };
+    if (isExplicit) explicit += type === "income" ? Math.abs(amountPence) : -Math.abs(amountPence);
+    else unsettled.push(pending);
+    if (balance !== null) {
+      settle(balance, explicit);
+      lastBalance = balance;
+      unsettled = [];
+      explicit = 0;
+    }
   }
   flush();
-  return rows;
+  return all.map(finish);
 }
 
 export async function parsePdfStatement(data: ArrayBuffer): Promise<PdfParseResult> {

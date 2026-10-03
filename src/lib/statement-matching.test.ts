@@ -19,6 +19,15 @@ describe("multi-line PDF statements", () => {
     expect(rows[1]).toMatchObject({ description: "Direct Debit O2", amountPence: 6189 });
     expect(rows[2]).toMatchObject({ date: "2026-09-10", description: "Transfer to Monzo", amountPence: 20000, type: "expense" });
   });
+  it("never turns a debit into income when the balance is printed once per day", () => {
+    const rows = rowsFromLines([
+      "27 Aug 2026 Direct Debit KLARNA 37.92 228.25",
+      "28 Aug 2026 Automated Credit DELOITTE LLP 2,312.21",
+      "10 60225737594050000N 200.00 2,340.46",
+    ]);
+    expect(rows[1]).toMatchObject({ amountPence: 231221, type: "income" });
+    expect(rows[2]).toMatchObject({ amountPence: 20000, type: "expense" });
+  });
 });
 
 describe("Outgoings matching", () => {
